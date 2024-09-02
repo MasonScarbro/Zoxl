@@ -1,5 +1,6 @@
 const std = @import("std");
 const chunk = @import("chunk.zig");
+const OpCode = @import("chunk.zig").OpCode;
 
 pub fn main() !void {
     // Create a general-purpose allocator
@@ -8,16 +9,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     // Initialize a Chunk with an allocator and initial capacity
-    var myChunk = try chunk.Chunk.initWithAlloc(&allocator, 8);
-    defer myChunk.freeChunk(&allocator);
+    var theChunk = chunk.init(&allocator);
+    defer theChunk.deinit();
 
-    // Write data to the chunk
-    const opCode: chunk.OpCode = .op_return;
-    try myChunk.writeChunk(&allocator, opCode.toU8());
-
-    // Optionally, print out the contents of the chunk for verification
-    std.debug.print("Chunk contents:\n");
-    for (myChunk.code) |byte| {
-        std.debug.print("  {d}\n", .{byte});
-    }
+    try theChunk.writeChunk(OpCode.op_return.toU8());
 }
