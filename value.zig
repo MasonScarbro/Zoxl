@@ -16,7 +16,9 @@ pub const Value = union(ValueType) {
 
 pub fn printValue(value: Value) void {
     const stdout = std.io.getStdOut().writer();
+
+    const msg = "Panic while printing value printOperation\n ";
     switch (value) {
-        .number => stdout.print("{d}\n", .{value}),
+        .number => stdout.print("{d}\n", .{value.number}) catch @panic(msg),
     }
 }

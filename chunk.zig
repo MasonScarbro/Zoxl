@@ -9,6 +9,8 @@ pub const OpCode = enum(u8) {
 
     op_return,
     op_constant,
+    op_negate,
+    op_constant_long,
 
     pub fn toU8(self: Self) u8 {
         return @intFromEnum(self);
@@ -22,6 +24,8 @@ pub const OpCode = enum(u8) {
         return switch (self) {
             .op_return => "OP_RETURN",
             .op_constant => "OP_CONSTANT",
+            .op_negate => "OP_NEGATE",
+            .op_constant_long => "OP_CONSTANT_LONG",
         };
     }
 };
@@ -49,12 +53,29 @@ pub const Chunk = struct {
         self.lines.appendItem(line);
     }
 
-    pub fn writeConstant(self: *Self, value: Value) !u9 {
-        const idx: u9 = @truncate(self.constants.count);
+    pub fn addConstant(self: *Self, value: Value) usize {
+        const idx: usize = self.constants.count;
 
         self.constants.appendValue(value);
 
         return idx;
+    }
+
+    pub fn writeConstant(self: *Self, value: Value, line: usize) void {
+        // Add the constant to the chunk and get the index.
+        const idx: usize = addConstant(self, value);
+        if (idx < 256) {
+            // If the index fits in one byte, use OP_CONSTANT.
+            try writeChunk(self, OpCode.op_constant.toU8(), line);
+            try writeChunk(self, @intCast(idx), line);
+        } else {
+            // If the index doesn't fit in one byte, use OP_CONSTANT_LONG.
+            try writeChunk(self, OpCode.op_constant_long.toU8(), line);
+            // Write the index as three separate bytes.
+            try writeChunk(self, @intCast((idx & 0xff)), line);
+            try writeChunk(self, @intCast((idx >> 8) & 0xff), line);
+            try writeChunk(self, @intCast((idx >> 16) & 0xff), line);
+        }
     }
 
     pub fn freeChunk(self: *Chunk) void {
