@@ -12,6 +12,10 @@ pub const Value = union(ValueType) {
     pub inline fn NumberValue(val: f64) Self {
         return Value{ .number = val };
     }
+
+    pub inline fn isNaN(self: Self) bool {
+        return @as(ValueType, self) != ValueType.number;
+    }
 };
 
 pub fn printValue(value: Value) void {

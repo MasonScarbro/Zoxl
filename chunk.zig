@@ -10,6 +10,10 @@ pub const OpCode = enum(u8) {
     op_return,
     op_constant,
     op_negate,
+    op_add,
+    op_subtract,
+    op_mult,
+    op_divide,
     op_constant_long,
 
     pub fn toU8(self: Self) u8 {
@@ -24,6 +28,10 @@ pub const OpCode = enum(u8) {
         return switch (self) {
             .op_return => "OP_RETURN",
             .op_constant => "OP_CONSTANT",
+            .op_add => "OP_ADD",
+            .op_subtract => "OP_SUBTRACT",
+            .op_mult => "OP_MULTIPLY",
+            .op_divide => "OP_DIVIDE",
             .op_negate => "OP_NEGATE",
             .op_constant_long => "OP_CONSTANT_LONG",
         };

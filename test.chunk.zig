@@ -17,19 +17,26 @@ test "Chunk initialization and deinitialization" {
     var vm = Vm.init(&allocator);
     defer vm.deinit();
     // Adding a dummy constant to the chunk
-    const value = Value.NumberValue(3.14);
+    var value = Value.NumberValue(3.14);
 
     // Adding dummy instructions to the chunk
+    //chunk.writeConstant(value, 1);
+    //try chunk.writeChunk(OpCode.op_negate.toU8(), 1);
+
+    // TEST for 3.4 + 5.6
+    value = Value.NumberValue(3.4);
     chunk.writeConstant(value, 1);
-    try chunk.writeChunk(OpCode.op_negate.toU8(), 1);
+
+    value = Value.NumberValue(5.6);
+    chunk.writeConstant(value, 1);
+
+    try chunk.writeChunk(OpCode.op_add.toU8(), 1); //add
+
     try chunk.writeChunk(OpCode.op_return.toU8(), 1);
 
     vm.interpret(&chunk);
 
-    const expected_value = Value.NumberValue(-3.14);
     const result = vm.pop();
-    std.debug.print("Expected: \n", .{});
-    printValue(expected_value);
-    std.debug.print("Actual: \n", .{});
+    std.debug.print("result: \n", .{});
     printValue(result);
 }

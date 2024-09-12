@@ -1,6 +1,7 @@
 const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 const Value = @import("./value.zig").Value;
+const ValueType = @import("./value.zig").ValueType;
 const printValue = @import("value.zig").printValue;
 const OpCode = @import("chunk.zig").OpCode;
 const Allocator = std.mem.Allocator;
@@ -66,6 +67,8 @@ pub const Vm = struct {
                 },
                 .op_constant => {
                     const constant: Value = self.read_constant();
+                    std.debug.print("Added Value: ", .{});
+                    printValue(constant);
                     self.push(constant);
                 },
                 .op_constant_long => {
@@ -83,6 +86,18 @@ pub const Vm = struct {
                         },
                         //else => return InterpretResult.interpret_runtime_error,
                     }
+                },
+                .op_add => {
+                    self.binaryOp(instruction);
+                },
+                .op_subtract => {
+                    self.binaryOp(instruction);
+                },
+                .op_mult => {
+                    self.binaryOp(instruction);
+                },
+                .op_divide => {
+                    self.binaryOp(instruction);
                 },
             }
         }
@@ -113,6 +128,39 @@ pub const Vm = struct {
         self.stack_top += 1; // Increment stack_top to point to the next available position
     }
 
+    pub inline fn peek(self: *Self) Value {
+        return self.stack[self.stack_top - 1];
+    }
+
+    //returns the item at the index, if negative it traces back from the top
+    pub inline fn peekAt(self: *Self, idx: isize) Value {
+        if (idx < 0) {
+            return self.stack[self.stack_top - 1 + (idx)];
+        }
+        return self.stack[idx];
+    }
+
+    pub inline fn binaryOp(self: *Self, op: OpCode) void {
+        std.debug.print("In Binary Op Func\n", .{});
+        if (self.peek().isNaN() and self.peekAt(-1).isNaN()) {
+            // better err message later
+            std.debug.panic("Attempt to perform arithmetic on non-numeric values");
+        }
+        //else
+        const b = self.pop().number;
+        std.debug.print("b is: {d}\n", .{b});
+
+        const a = self.pop().number;
+        std.debug.print("a is: {d}\n", .{a});
+
+        switch (op) {
+            .op_add => self.push(Value.NumberValue(a + b)),
+            .op_mult => self.push(Value.NumberValue(a * b)),
+            .op_divide => self.push(Value.NumberValue(a / b)),
+            .op_subtract => self.push(Value.NumberValue(a - b)),
+            else => std.debug.print("Failure", .{}), // bettter messages later
+        }
+    }
     pub inline fn pop(self: *Self) Value {
         // stack_top always points to the next value, so the last value is one index behind.
         // stack = [1, 2, 3, 4, null...]
