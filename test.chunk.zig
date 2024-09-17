@@ -31,6 +31,7 @@ test "Chunk initialization and deinitialization" {
     chunk.writeConstant(value, 1);
 
     try chunk.writeChunk(OpCode.op_add.toU8(), 1); //add
+    //
 
     try chunk.writeChunk(OpCode.op_return.toU8(), 1);
 

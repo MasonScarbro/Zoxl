@@ -7,16 +7,19 @@ const OpCode = @import("chunk.zig").OpCode;
 const Allocator = std.mem.Allocator;
 const disassembleInstruction = @import("./debugging.zig").disassembleInstruction;
 const printStack = @import("debugging.zig").printStack;
-
+const compile = @import("./compiler.zig").compile;
 const DEBUG_TRACE_EXECUTION = true;
 const STACK_MAX = 256;
+
+pub const InterpretErr = error{
+    interpret_compile_error,
+    interpret_runtime_error,
+};
 
 pub const InterpretResult = enum(u8) {
     const Self = @This();
 
     interpret_ok,
-    interpret_compile_error,
-    interpret_runtime_error,
 };
 
 pub const Vm = struct {
@@ -36,6 +39,7 @@ pub const Vm = struct {
 
     pub fn init(allocator: *Allocator) Self {
         _ = allocator;
+
         return Self{
             .ip = 0,
             .chunk = undefined,
@@ -46,13 +50,20 @@ pub const Vm = struct {
         _ = self;
     }
 
-    pub fn interpret(self: *Self, chunk: *Chunk) void {
+    pub fn test_interpret(self: *Self, chunk: *Chunk) InterpretErr!void {
         self.chunk = chunk;
         self.ip = 0;
         self.run();
     }
 
-    pub fn run(self: *Self) void {
+    pub fn interpret(self: *Self, source: []const u8) InterpretErr!void {
+        //self.chunk = chunk;
+        compile(source);
+        self.ip = 0;
+        self.run();
+    }
+
+    pub fn run(self: *Self) InterpretErr!void {
         while (true) {
             if (comptime DEBUG_TRACE_EXECUTION) {
                 //printStack(&self.stack);
@@ -140,11 +151,13 @@ pub const Vm = struct {
         return self.stack[idx];
     }
 
-    pub inline fn binaryOp(self: *Self, op: OpCode) void {
+    pub inline fn binaryOp(self: *Self, op: OpCode) InterpretErr!void {
         std.debug.print("In Binary Op Func\n", .{});
         if (self.peek().isNaN() and self.peekAt(-1).isNaN()) {
             // better err message later
+
             std.debug.panic("Attempt to perform arithmetic on non-numeric values");
+            return InterpretErr.interpret_runtime_error;
         }
         //else
         const b = self.pop().number;
@@ -158,7 +171,9 @@ pub const Vm = struct {
             .op_mult => self.push(Value.NumberValue(a * b)),
             .op_divide => self.push(Value.NumberValue(a / b)),
             .op_subtract => self.push(Value.NumberValue(a - b)),
-            else => std.debug.print("Failure", .{}), // bettter messages later
+            else => {
+                return InterpretErr.interpret_runtime_error;
+            }, // bettter messages later
         }
     }
     pub inline fn pop(self: *Self) Value {
