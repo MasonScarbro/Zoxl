@@ -29,21 +29,17 @@ pub const Vm = struct {
     ip: usize = 0,
     stack: [STACK_MAX]Value = undefined,
     stack_top: usize = 0,
+    allocator: *Allocator,
 
     pub fn test_init(allocator: *Allocator, chunk: *Chunk) Self {
-        var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0 };
+        var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0, .allocator = allocator };
         vm.reset_stack();
-        _ = allocator;
+
         return vm;
     }
 
     pub fn init(allocator: *Allocator) Self {
-        _ = allocator;
-
-        return Self{
-            .ip = 0,
-            .chunk = undefined,
-        };
+        return Self{ .ip = 0, .chunk = undefined, .allocator = allocator };
     }
 
     pub fn deinit(self: *Self) void {
@@ -58,9 +54,15 @@ pub const Vm = struct {
 
     pub fn interpret(self: *Self, source: []const u8) InterpretErr!void {
         //self.chunk = chunk;
-        compile(source);
+
+        var chunk = Chunk.init(&self.allocator);
+        defer chunk.deinit();
+
+        compile(source, &chunk) catch return InterpretErr.interpret_compile_error;
+
         self.ip = 0;
-        self.run();
+        self.chunk = &chunk;
+        return self.run();
     }
 
     pub fn run(self: *Self) InterpretErr!void {

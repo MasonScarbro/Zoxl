@@ -73,10 +73,10 @@ pub const Scanner = struct {
         self.start = self.current;
         if (self.isAtEnd()) return self.createToken(TokenType.EOF);
         //do stuff
-        std.debug.print("\n start = {c}", .{self.src[self.start]});
-        std.debug.print("\n current = {c}\n", .{self.src[self.current]});
+        //std.debug.print("\n start = {c}", .{self.src[self.start]});
+        //std.debug.print("\n current = {c}\n", .{self.src[self.current]});
         const c = self.advance();
-        std.debug.print("\n c = {c}\n", .{c});
+        //std.debug.print("\n c = {c}\n", .{c});
         if (isDigit(c)) return self.handleNumber();
         if (isAlpha(c)) return self.handleIdentifier();
 
