@@ -217,8 +217,8 @@ pub const Scanner = struct {
 
     pub inline fn checkKeyword(self: *Self, start: usize, len: usize, rest: []const u8, ttype: TokenType) TokenType {
         const lexeme_len = self.current - self.start;
-        std.debug.print("\n INSIDE CHECKKEYWORD ", .{});
-        std.debug.print("\n rest: {s} self.src[self.start + start .. self.start + start + len]: {s}\n", .{ rest, self.src[self.start + start .. self.start + start + len] });
+        //std.debug.print("\n INSIDE CHECKKEYWORD ", .{});
+        //std.debug.print("\n rest: {s} self.src[self.start + start .. self.start + start + len]: {s}\n", .{ rest, self.src[self.start + start .. self.start + start + len] });
         // Check if the length of the current lexeme matches the keyword's length
         if (lexeme_len == start + len) {
             // Compare the substring from start to current with the expected keyword
