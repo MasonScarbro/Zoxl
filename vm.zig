@@ -55,7 +55,7 @@ pub const Vm = struct {
     pub fn interpret(self: *Self, source: []const u8) InterpretErr!void {
         //self.chunk = chunk;
 
-        var chunk = Chunk.init(&self.allocator);
+        var chunk = Chunk.init(self.allocator);
         defer chunk.deinit();
 
         compile(source, &chunk) catch return InterpretErr.interpret_compile_error;
@@ -76,7 +76,7 @@ pub const Vm = struct {
             switch (instruction) {
                 .op_return => {
                     std.debug.print("RETURNED \n", .{});
-                    break;
+                    return;
                 },
                 .op_constant => {
                     const constant: Value = self.read_constant();
@@ -101,16 +101,16 @@ pub const Vm = struct {
                     }
                 },
                 .op_add => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
                 .op_subtract => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
                 .op_mult => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
                 .op_divide => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
             }
         }
@@ -169,7 +169,10 @@ pub const Vm = struct {
         std.debug.print("a is: {d}\n", .{a});
 
         switch (op) {
-            .op_add => self.push(Value.NumberValue(a + b)),
+            .op_add => {
+                self.push(Value.NumberValue(a + b));
+                std.debug.print("Finished binary Op pushed {}\n", .{a + b});
+            },
             .op_mult => self.push(Value.NumberValue(a * b)),
             .op_divide => self.push(Value.NumberValue(a / b)),
             .op_subtract => self.push(Value.NumberValue(a - b)),

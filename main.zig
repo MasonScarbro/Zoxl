@@ -4,10 +4,9 @@ const OpCode = @import("chunk.zig").OpCode;
 const Vm = @import("vm.zig").Vm;
 const InterpretErr = @import("./vm.zig").InterpretErr;
 
-const errout = std.io.getStdErr().writer();
-const stdout = std.io.getStdOut().writer();
-
 pub fn main() anyerror!void {
+    const errout = initStdErr();
+
     // Create a general-purpose allocator
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -32,6 +31,7 @@ pub fn main() anyerror!void {
 }
 
 fn repl(vm: *Vm) void {
+    const stdout = initStdOut();
     var reader = std.io.bufferedReader(std.io.getStdIn().reader()).reader();
     var line: u8[1024] = undefined;
 
@@ -59,6 +59,7 @@ fn runFile(fileName: []const u8, vm: *Vm, allocator: std.mem.Allocator) void {
 }
 
 fn readFile(path: []const u8, allocator: std.mem.Allocator) []const u8 {
+    const errout = initStdErr();
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         errout.print("Could not open file \"{s}\", error: {any}.\n", .{ path, err }) catch {};
         std.process.exit(74);
@@ -69,4 +70,13 @@ fn readFile(path: []const u8, allocator: std.mem.Allocator) []const u8 {
         errout.print("Could not read file \"{s}\", error: {any}.\n", .{ path, err }) catch {};
         std.process.exit(74);
     };
+}
+
+//______________________ WINDOWS TOOLS ___________________________//
+pub fn initStdOut() std.io.Writer {
+    return std.io.getStdOut().writer();
+}
+
+pub fn initStdErr() std.io.AnyWriter {
+    return std.io.getStdErr().writer();
 }
