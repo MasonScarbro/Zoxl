@@ -88,6 +88,19 @@ pub const Vm = struct {
                     const constant: Value = self.read_constant();
                     self.push(constant);
                 },
+                .op_nil => self.push(Value.NilValue()),
+                .op_true => self.push(Value.BooleanValue(true)),
+                .op_false => self.push(Value.BooleanValue(false)),
+                .op_equal => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    self.push(Value.BooleanValue(b.equals(a)));
+                },
+                .op_greater => self.binaryOp(instruction),
+                .op_less => self.binaryOp(instruction),
+                .op_not => {
+                    self.push(Value.BooleanValue(isFalsey(self.pop())));
+                },
                 .op_negate => {
                     const val = self.pop();
 
@@ -97,20 +110,20 @@ pub const Vm = struct {
                             self.push(negatedValue);
                             std.debug.print("Pushed negated value: {}\n", .{negatedValue});
                         },
-                        //else => return InterpretResult.interpret_runtime_error,
+                        else => return self.runtimeErr("Operand Must Be A Number"),
                     }
                 },
                 .op_add => {
-                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
+                    self.binaryOp(instruction);
                 },
                 .op_subtract => {
-                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
+                    self.binaryOp(instruction);
                 },
                 .op_mult => {
-                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
+                    self.binaryOp(instruction);
                 },
                 .op_divide => {
-                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
+                    self.binaryOp(instruction);
                 },
             }
         }
@@ -156,10 +169,7 @@ pub const Vm = struct {
     pub inline fn binaryOp(self: *Self, op: OpCode) InterpretErr!void {
         std.debug.print("In Binary Op Func\n", .{});
         if (self.peek().isNaN() and self.peekAt(-1).isNaN()) {
-            // better err message later
-
-            std.debug.panic("Attempt to perform arithmetic on non-numeric values");
-            return InterpretErr.interpret_runtime_error;
+            return self.runtimeErr("Operands Must Be Numbers");
         }
         //else
         const b = self.pop().number;
@@ -169,13 +179,12 @@ pub const Vm = struct {
         std.debug.print("a is: {d}\n", .{a});
 
         switch (op) {
-            .op_add => {
-                self.push(Value.NumberValue(a + b));
-                std.debug.print("Finished binary Op pushed {}\n", .{a + b});
-            },
+            .op_add => self.push(Value.NumberValue(a + b)),
             .op_mult => self.push(Value.NumberValue(a * b)),
             .op_divide => self.push(Value.NumberValue(a / b)),
             .op_subtract => self.push(Value.NumberValue(a - b)),
+            .op_greater => self.push(Value.BooleanValue(a > b)),
+            .op_less => self.push(Value.BooleanValue(a < b)),
             else => {
                 return InterpretErr.interpret_runtime_error;
             }, // bettter messages later
@@ -189,5 +198,28 @@ pub const Vm = struct {
 
         self.stack_top -= 1; // Decrement stack_top to point to the last pushed value
         return self.stack[self.stack_top]; // Return the value at the new stack_top position
+    }
+
+    //_______________ ERR ______________ //
+    inline fn runtimeErr(self: *Self, msg: []const u8) InterpretErr {
+        const err_writer = std.io.getStdErr().writer();
+
+        err_writer.print("{s}.\n", .{msg}) catch {};
+
+        const instruction = self.ip - 1;
+        const line = self.chunk.lines.items[instruction];
+
+        err_writer.print("[line {d}] in ", .{line}) catch {};
+
+        self.reset_stack();
+        return InterpretErr.interpret_runtime_error;
+    }
+
+    pub fn isFalsey(value: Value) bool {
+        return switch (value) {
+            .nil => true,
+            .boolean => |val| !val,
+            else => false,
+        };
     }
 };

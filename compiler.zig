@@ -110,13 +110,23 @@ pub const Parser = struct {
         self.consume(TokenType.RIGHTPAREN, "Expected ')' after expression");
     }
 
+    pub fn literal(self: *Self) void {
+        switch (self.previous.token_type) {
+            .FALSE => self.compiler.emitByte(OpCode.op_false.toU8(), self.previous.line),
+            .TRUE => self.compiler.emitByte(OpCode.op_true.toU8(), self.previous.line),
+            .NIL => self.compiler.emitByte(OpCode.op_nil.toU8(), self.previous.line),
+            else => unreachable,
+        }
+    }
+
     pub fn unary(self: *Self) void {
         const operType = self.previous.token_type;
 
         //compile the operand
         self.parsePrecedence(Precedence.UNARY);
         switch (operType) {
-            .MINUS => self.compiler.emitByte(OpCode.op_negate.toU8(), self.scanner.line),
+            .BANG => self.compiler.emitByte(OpCode.op_not.toU8(), self.previous.line),
+            .MINUS => self.compiler.emitByte(OpCode.op_negate.toU8(), self.previous.line),
             else => return, //unreachable
         }
     }
@@ -127,10 +137,16 @@ pub const Parser = struct {
         self.parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1)); //this is shifting the byte by one
 
         switch (operType) {
-            .PLUS => self.compiler.emitByte(OpCode.op_add.toU8(), self.scanner.line),
-            .MINUS => self.compiler.emitByte(OpCode.op_subtract.toU8(), self.scanner.line),
-            .STAR => self.compiler.emitByte(OpCode.op_mult.toU8(), self.scanner.line),
-            .SLASH => self.compiler.emitByte(OpCode.op_divide.toU8(), self.scanner.line),
+            .PLUS => self.compiler.emitByte(OpCode.op_add.toU8(), self.previous.line),
+            .MINUS => self.compiler.emitByte(OpCode.op_subtract.toU8(), self.previous.line),
+            .STAR => self.compiler.emitByte(OpCode.op_mult.toU8(), self.previous.line),
+            .SLASH => self.compiler.emitByte(OpCode.op_divide.toU8(), self.previous.line),
+            .BANGEQUAL => self.compiler.emitBytes(OpCode.op_equal.toU8(), OpCode.op_not.toU8(), self.previous.line),
+            .EQUALEQUAL => self.compiler.emitBytes(OpCode.op_equal.toU8(), self.previous.line),
+            .GREATER => self.compiler.emitBytes(OpCode.op_greater.toU8(), OpCode.op_not.toU8(), self.previous.line),
+            .GREATEREQUAL => self.compiler.emitBytes(OpCode.op_less.toU8(), OpCode.op_not.toU8(), self.previous.line),
+            .LESS => self.compiler.emitBytes(OpCode.op_less.toU8(), self.previous.line),
+            .LESSEQUAL => self.compiler.emitBytes(OpCode.op_greater.toU8(), OpCode.op_not.toU8(), self.previous.line),
             else => unreachable,
         }
     }
@@ -211,23 +227,23 @@ pub fn getRule(ttype: TokenType) ParseRule {
         //.IDENTIFIER => comptime ParseRule.init(Parser.variable, null, Precedence.NONE),
         //.STRING => comptime ParseRule.init(Parser.string, null, Precedence.NONE),
         .NUMBER => comptime ParseRule.init(Parser.number, null, Precedence.NONE),
-        // .AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
-        // .CLASS => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .ELSE => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .FALSE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
-        // .FOR => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .FUN => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .IF => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .NIL => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
-        // .OR => comptime ParseRule.init(null, Parser.logical_or, Precedence.OR),
-        // .PRINT => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .RETURN => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .SUPER => comptime ParseRule.init(Parser.super, null, Precedence.NONE),
-        // .THIS => comptime ParseRule.init(Parser.this, null, Precedence.NONE),
-        // .TRUE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
-        // .VAR => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .WHILE => comptime ParseRule.init(null, null, Precedence.NONE),
-        // .ERROR => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
+        //.CLASS => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.ELSE => comptime ParseRule.init(null, null, Precedence.NONE),
+        .FALSE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
+        //.FOR => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.FUN => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.IF => comptime ParseRule.init(null, null, Precedence.NONE),
+        .NIL => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
+        //.OR => comptime ParseRule.init(null, Parser.logical_or, Precedence.OR),
+        //.PRINT => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.RETURN => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.SUPER => comptime ParseRule.init(Parser.super, null, Precedence.NONE),
+        //.THIS => comptime ParseRule.init(Parser.this, null, Precedence.NONE),
+        .TRUE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
+        //.VAR => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.WHILE => comptime ParseRule.init(null, null, Precedence.NONE),
+        //.ERROR => comptime ParseRule.init(null, null, Precedence.NONE),
         .EOF => comptime ParseRule.init(null, null, Precedence.NONE),
         else => unreachable,
     };

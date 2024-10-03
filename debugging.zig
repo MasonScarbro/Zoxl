@@ -26,6 +26,13 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
     return switch (instruction) {
         .op_return => simpleInstruction(instruction.toString(), offset),
         .op_constant => constInstruction(instruction.toString(), chunk, offset),
+        .op_false => simpleInstruction(instruction.toString(), offset),
+        .op_true => simpleInstruction(instruction.toString(), offset),
+        .op_nil => simpleInstruction(instruction.toString(), offset),
+        .op_not => simpleInstruction(instruction.toString(), offset),
+        .op_greater => simpleInstruction(instruction.toString(), offset),
+        .op_less => simpleInstruction(instruction.toString(), offset),
+        .op_equal => simpleInstruction(instruction.toString(), offset),
         .op_negate => simpleInstruction(instruction.toString(), offset),
         .op_add => simpleInstruction(instruction.toString(), offset),
         .op_subtract => simpleInstruction(instruction.toString(), offset),
