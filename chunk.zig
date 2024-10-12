@@ -40,6 +40,13 @@ pub const OpCode = enum(u8) {
             .op_mult => "OP_MULTIPLY",
             .op_divide => "OP_DIVIDE",
             .op_negate => "OP_NEGATE",
+            .op_equal => "OP_EQUAL",
+            .op_nil => "OP_NIL",
+            .op_true => "OP_TRUE",
+            .op_false => "OP_FALSE",
+            .op_not => "OP_NOT",
+            .op_greater => "OP_GREATER",
+            .op_less => "OP_LESS",
             .op_constant_long => "OP_CONSTANT_LONG",
         };
     }

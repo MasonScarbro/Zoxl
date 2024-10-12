@@ -4,11 +4,22 @@ const Chunk = @import("chunk.zig").Chunk;
 var Allocator = std.testing.allocator;
 const Vm = @import("./vm.zig").Vm;
 
-test "Compiler Correctly Compiles code" {
-    const src = "4 + 4";
-    var allocator = std.testing.allocator;
+test "Compiler Correctly Compiles a string" {
+    const src = "\"string\"";
+    const allocator = std.testing.allocator;
 
-    var vm = Vm.init(&allocator);
+    var vm = Vm.init(allocator);
     try vm.interpret(src);
+    defer vm.deinit();
+    //try compile(src, &chunk);
+}
+
+test "Compiler Correctly Compiles a comp expr" {
+    const src = "4 > 3";
+    const allocator = std.testing.allocator;
+
+    var vm = Vm.init(allocator);
+    try vm.interpret(src);
+    defer vm.deinit();
     //try compile(src, &chunk);
 }

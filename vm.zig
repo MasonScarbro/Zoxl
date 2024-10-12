@@ -8,6 +8,7 @@ const Allocator = std.mem.Allocator;
 const disassembleInstruction = @import("./debugging.zig").disassembleInstruction;
 const printStack = @import("debugging.zig").printStack;
 const compile = @import("./compiler.zig").compile;
+const Object = @import("./object.zig");
 const DEBUG_TRACE_EXECUTION = true;
 const STACK_MAX = 256;
 
@@ -29,21 +30,33 @@ pub const Vm = struct {
     ip: usize = 0,
     stack: [STACK_MAX]Value = undefined,
     stack_top: usize = 0,
-    allocator: *Allocator,
+    objects: ?*Object.Object = null,
+    allocator: Allocator,
 
-    pub fn test_init(allocator: *Allocator, chunk: *Chunk) Self {
+    pub fn test_init(allocator: Allocator, chunk: *Chunk) Self {
         var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0, .allocator = allocator };
         vm.reset_stack();
 
         return vm;
     }
 
-    pub fn init(allocator: *Allocator) Self {
+    pub fn init(allocator: Allocator) Self {
         return Self{ .ip = 0, .chunk = undefined, .allocator = allocator };
     }
 
     pub fn deinit(self: *Self) void {
-        _ = self;
+        self.freeObjects();
+    }
+
+    pub inline fn freeObjects(self: *Self) void {
+        var object = self.objects;
+
+        while (object) |obj| {
+            std.debug.print("Freeing Object... {}\n", .{obj.objType});
+            const next = obj.next;
+            obj.freeObject(self);
+            object = next;
+        }
     }
 
     pub fn test_interpret(self: *Self, chunk: *Chunk) InterpretErr!void {
@@ -55,10 +68,10 @@ pub const Vm = struct {
     pub fn interpret(self: *Self, source: []const u8) InterpretErr!void {
         //self.chunk = chunk;
 
-        var chunk = Chunk.init(self.allocator);
+        var chunk = Chunk.init(&self.allocator);
         defer chunk.deinit();
 
-        compile(source, &chunk) catch return InterpretErr.interpret_compile_error;
+        compile(self, source, &chunk) catch return InterpretErr.interpret_compile_error;
 
         self.ip = 0;
         self.chunk = &chunk;
@@ -73,7 +86,7 @@ pub const Vm = struct {
             }
 
             const instruction = self.read_instruction();
-            switch (instruction) {
+            try switch (instruction) {
                 .op_return => {
                     std.debug.print("RETURNED \n", .{});
                     return;
@@ -114,18 +127,18 @@ pub const Vm = struct {
                     }
                 },
                 .op_add => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
                 .op_subtract => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
                 .op_mult => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
                 .op_divide => {
-                    self.binaryOp(instruction);
+                    self.binaryOp(instruction) catch return InterpretErr.interpret_runtime_error;
                 },
-            }
+            };
         }
     }
 
@@ -166,9 +179,17 @@ pub const Vm = struct {
         return self.stack[idx];
     }
 
+    fn peekBack(self: *Self, back: usize) Value {
+        return self.stack[self.stack_top - 1 - back];
+    }
+
     pub inline fn binaryOp(self: *Self, op: OpCode) InterpretErr!void {
         std.debug.print("In Binary Op Func\n", .{});
-        if (self.peek().isNaN() and self.peekAt(-1).isNaN()) {
+        if (self.peek().isObjType(.STRING) and self.peekBack(1).isObjType(.STRING)) {
+            self.concate();
+            return;
+        }
+        if (self.peek().isNaN() and self.peekBack(1).isNaN()) {
             return self.runtimeErr("Operands Must Be Numbers");
         }
         //else
@@ -190,6 +211,22 @@ pub const Vm = struct {
             }, // bettter messages later
         }
     }
+
+    pub inline fn concate(self: *Self) void {
+        std.debug.print("INSIDE CONCATE\n", .{});
+        const b = self.peek().obj.asString();
+        const a = self.peekBack(1).obj.asString();
+
+        const heap = std.mem.concat(self.allocator, u8, &[_][]const u8{ a.chars, b.chars }) catch unreachable;
+        const obj = Object.StringObj.takeStr(self, heap);
+
+        //std.debug.print("Concated: {s}\n", .{heap});
+
+        _ = self.pop();
+        _ = self.pop();
+        self.push(Value.ObjectValue(&obj.obj));
+    }
+
     pub inline fn pop(self: *Self) Value {
         // stack_top always points to the next value, so the last value is one index behind.
         // stack = [1, 2, 3, 4, null...]

@@ -5,6 +5,8 @@ const Token = @import("./scanner.zig").Token;
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
+const Object = @import("./object.zig");
+const Vm = @import("./vm.zig").Vm;
 const disassembleChunk = @import("./debugging.zig").disassembleChunk;
 const initStdErr = @import("./main.zig").initStdErr();
 
@@ -45,10 +47,10 @@ const ParseRule = struct {
     }
 };
 
-pub fn compile(src: []const u8, chunk: *Chunk) CompileError!void {
+pub fn compile(vm: *Vm, src: []const u8, chunk: *Chunk) CompileError!void {
     var scanner = Scanner.init(src);
     var compiler = Compiler.init(chunk);
-    var parser = Parser.init(&scanner, &compiler);
+    var parser = Parser.init(vm, &scanner, &compiler);
     parser.advance(); //Kick off parser
     if (parser.hadErr == true) return CompileError.ScannerErr;
     parser.expr();
@@ -65,13 +67,15 @@ pub const Parser = struct {
     compiler: *Compiler,
     hadErr: bool = false,
     panicMode: bool = false,
+    vm: *Vm,
 
-    pub fn init(scanner: *Scanner, compiler: *Compiler) Self {
+    pub fn init(vm: *Vm, scanner: *Scanner, compiler: *Compiler) Self {
         return Self{
             .scanner = scanner,
             .compiler = compiler,
             .current = undefined,
             .previous = undefined,
+            .vm = vm,
         };
     }
 
@@ -94,6 +98,11 @@ pub const Parser = struct {
         //else
 
         self.errAtCurrent(msg);
+    }
+
+    pub fn string(self: *Self) void {
+        const strObj = Object.StringObj.copyStr(self.vm, self.previous.lexeme);
+        self.compiler.emitConstant(Value.ObjectValue(&strObj.obj), self.previous.line);
     }
 
     pub fn number(self: *Self) void {
@@ -142,10 +151,10 @@ pub const Parser = struct {
             .STAR => self.compiler.emitByte(OpCode.op_mult.toU8(), self.previous.line),
             .SLASH => self.compiler.emitByte(OpCode.op_divide.toU8(), self.previous.line),
             .BANGEQUAL => self.compiler.emitBytes(OpCode.op_equal.toU8(), OpCode.op_not.toU8(), self.previous.line),
-            .EQUALEQUAL => self.compiler.emitBytes(OpCode.op_equal.toU8(), self.previous.line),
-            .GREATER => self.compiler.emitBytes(OpCode.op_greater.toU8(), OpCode.op_not.toU8(), self.previous.line),
+            .EQUALEQUAL => self.compiler.emitByte(OpCode.op_equal.toU8(), self.previous.line),
+            .GREATER => self.compiler.emitByte(OpCode.op_greater.toU8(), self.previous.line),
             .GREATEREQUAL => self.compiler.emitBytes(OpCode.op_less.toU8(), OpCode.op_not.toU8(), self.previous.line),
-            .LESS => self.compiler.emitBytes(OpCode.op_less.toU8(), self.previous.line),
+            .LESS => self.compiler.emitByte(OpCode.op_less.toU8(), self.previous.line),
             .LESSEQUAL => self.compiler.emitBytes(OpCode.op_greater.toU8(), OpCode.op_not.toU8(), self.previous.line),
             else => unreachable,
         }
@@ -225,7 +234,7 @@ pub fn getRule(ttype: TokenType) ParseRule {
         .LESS => comptime ParseRule.init(null, Parser.binary, Precedence.COMPARISON),
         .LESSEQUAL => comptime ParseRule.init(null, Parser.binary, Precedence.COMPARISON),
         //.IDENTIFIER => comptime ParseRule.init(Parser.variable, null, Precedence.NONE),
-        //.STRING => comptime ParseRule.init(Parser.string, null, Precedence.NONE),
+        .STRING => comptime ParseRule.init(Parser.string, null, Precedence.NONE),
         .NUMBER => comptime ParseRule.init(Parser.number, null, Precedence.NONE),
         //.AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
         //.CLASS => comptime ParseRule.init(null, null, Precedence.NONE),
