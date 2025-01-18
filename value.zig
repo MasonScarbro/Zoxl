@@ -63,18 +63,15 @@ pub const Value = union(ValueType) {
 };
 
 pub fn printValue(value: Value) void {
-    const stdout = std.io.getStdOut().writer();
-
-    const msg = "Panic while printing value printOperation\n ";
     switch (value) {
-        .number => stdout.print("{d}\n", .{value.number}) catch @panic(msg),
-        .boolean => stdout.print("{}\n", .{value.boolean}) catch @panic(msg),
+        .number => std.debug.print("{d}\n", .{value.number}),
+        .boolean => std.debug.print("{}\n", .{value.boolean}),
         .obj => |objVal| {
             switch (objVal.objType) {
-                .STRING => stdout.print("{s}\n", .{objVal.asString().chars}) catch @panic(msg),
+                .STRING => std.debug.print("{s}\n", .{objVal.asString().chars}),
                 //else => unreachable,
             }
         },
-        .nil => stdout.print("nil\n", .{}) catch @panic(msg),
+        .nil => std.debug.print("nil\n", .{}),
     }
 }

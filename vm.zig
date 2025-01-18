@@ -198,9 +198,12 @@ pub const Vm = struct {
 
         const a = self.pop().number;
         std.debug.print("a is: {d}\n", .{a});
-
+        std.debug.print("op is: {}\n", .{op});
         switch (op) {
-            .op_add => self.push(Value.NumberValue(a + b)),
+            .op_add => {
+                self.push(Value.NumberValue(a + b));
+                std.debug.print("pushed value : {d} to {}\n", .{ a + b, self.stack_top - 1 });
+            },
             .op_mult => self.push(Value.NumberValue(a * b)),
             .op_divide => self.push(Value.NumberValue(a / b)),
             .op_subtract => self.push(Value.NumberValue(a - b)),
