@@ -42,6 +42,7 @@ pub const StringObj = struct {
     obj: Object,
     len: usize,
     chars: []const u8,
+    hash: u64,
 
     pub fn tag() ObjectType {
         return .STRING;
@@ -60,20 +61,44 @@ pub const StringObj = struct {
     }
 
     pub fn copyStr(vm: *Vm, chars: []const u8) *StringObj {
+        const hash = std.hash.Wyhash.hash(0, chars);
+        const interned = vm.strings.findStr(chars, hash);
+        if (interned) |interneded| {
+            return interneded;
+        }
         const heap = vm.allocator.alloc(u8, chars.len) catch @panic("Err Copying String\n");
         @memcpy(heap, chars);
 
-        return allocateStr(vm, heap);
+        return allocateStr(vm, heap, hash);
     }
 
-    fn allocateStr(vm: *Vm, bytes: []const u8) *StringObj {
+    fn allocateStr(vm: *Vm, bytes: []const u8, hash: u64) *StringObj {
         const str = Object.create(vm, StringObj, ObjectType.STRING);
         str.chars = bytes;
         str.len = bytes.len;
+        str.hash = hash;
+        _ = vm.strings.set(str, Value.NilValue());
         return str;
     }
 
     pub fn takeStr(vm: *Vm, chars: []const u8) *StringObj {
-        return allocateStr(vm, chars);
+        const hash = std.hash.Wyhash.hash(0, chars);
+        const interned = vm.strings.findStr(chars, hash);
+        if (interned) |interneded| {
+            vm.allocator.free(chars);
+            return interneded;
+        }
+        return allocateStr(vm, chars, hash);
     }
 };
+
+fn hashBytes(bytes: []const u8) u32 {
+    var hash: u32 = 2166136261;
+
+    for (bytes) |byte| {
+        hash ^= byte;
+        _ = @mulWithOverflow(hash, 16777619);
+    }
+
+    return hash;
+}

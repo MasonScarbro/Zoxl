@@ -11,6 +11,7 @@ const compile = @import("./compiler.zig").compile;
 const Object = @import("./object.zig");
 const DEBUG_TRACE_EXECUTION = true;
 const STACK_MAX = 256;
+const HashTable = @import("./hashTable.zig").HashTable;
 
 pub const InterpretErr = error{
     interpret_compile_error,
@@ -32,6 +33,7 @@ pub const Vm = struct {
     stack_top: usize = 0,
     objects: ?*Object.Object = null,
     allocator: Allocator,
+    strings: HashTable,
 
     pub fn test_init(allocator: Allocator, chunk: *Chunk) Self {
         var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0, .allocator = allocator };
@@ -41,11 +43,12 @@ pub const Vm = struct {
     }
 
     pub fn init(allocator: Allocator) Self {
-        return Self{ .ip = 0, .chunk = undefined, .allocator = allocator };
+        return Self{ .ip = 0, .chunk = undefined, .allocator = allocator, .strings = HashTable.init(allocator) };
     }
 
     pub fn deinit(self: *Self) void {
         self.freeObjects();
+        self.strings.deinit();
     }
 
     pub inline fn freeObjects(self: *Self) void {
