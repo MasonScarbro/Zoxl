@@ -8,6 +8,7 @@ pub const OpCode = enum(u8) {
     const Self = @This();
 
     op_return,
+    op_print,
     op_constant,
     op_nil,
     op_true,
@@ -34,6 +35,7 @@ pub const OpCode = enum(u8) {
     pub fn toString(self: Self) []const u8 {
         return switch (self) {
             .op_return => "OP_RETURN",
+            .op_print => "OP_PRINT",
             .op_constant => "OP_CONSTANT",
             .op_add => "OP_ADD",
             .op_subtract => "OP_SUBTRACT",

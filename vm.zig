@@ -9,7 +9,7 @@ const disassembleInstruction = @import("./debugging.zig").disassembleInstruction
 const printStack = @import("debugging.zig").printStack;
 const compile = @import("./compiler.zig").compile;
 const Object = @import("./object.zig");
-const DEBUG_TRACE_EXECUTION = true;
+const DEBUG_TRACE_EXECUTION = false;
 const STACK_MAX = 256;
 const HashTable = @import("./hashTable.zig").HashTable;
 
@@ -93,6 +93,10 @@ pub const Vm = struct {
                 .op_return => {
                     std.debug.print("RETURNED \n", .{});
                     return;
+                },
+                .op_print => {
+                    printValue(self.pop());
+                    std.debug.print("\n", .{});
                 },
                 .op_constant => {
                     const constant: Value = self.read_constant();

@@ -53,8 +53,10 @@ pub fn compile(vm: *Vm, src: []const u8, chunk: *Chunk) CompileError!void {
     var parser = Parser.init(vm, &scanner, &compiler);
     parser.advance(); //Kick off parser
     if (parser.hadErr == true) return CompileError.ScannerErr;
-    parser.expr();
-    parser.consume(TokenType.EOF, "Expected End Of Expression");
+    while (!parser.match(TokenType.EOF)) {
+        parser.declaration();
+    }
+    parser.consume(.EOF, "Expect end of expression");
     compiler.endCompiler(parser.previous.line);
 }
 
@@ -112,6 +114,22 @@ pub const Parser = struct {
 
     pub fn expr(self: *Self) void {
         self.parsePrecedence(Precedence.ASSIGNMENT);
+    }
+
+    pub fn declaration(self: *Self) void {
+        self.statement();
+    }
+
+    pub fn statement(self: *Self) void {
+        if (self.match(TokenType.PRINT)) {
+            self.printStatement();
+        }
+    }
+
+    pub fn printStatement(self: *Self) void {
+        self.expr();
+        self.consume(TokenType.SEMICOLON, "Expected ';' after value.");
+        self.compiler.emitByte(OpCode.op_print.toU8(), self.previous.line);
     }
 
     pub fn grouping(self: *Self) void {
@@ -177,6 +195,18 @@ pub const Parser = struct {
             };
             infixRule(self);
         }
+    }
+
+    //------- Proceedings and Checkings ------- //
+
+    pub fn match(self: *Self, ttype: TokenType) bool {
+        if (!self.check(ttype)) return false;
+        self.advance();
+        return true;
+    }
+
+    pub fn check(self: *Self, ttype: TokenType) bool {
+        return self.current.token_type == ttype;
     }
 
     //---------------- ERRHANDLING --------------------------//
