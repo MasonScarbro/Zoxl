@@ -48,12 +48,12 @@ pub const HashTable = struct {
         return isNewKey;
     }
 
-    pub inline fn get(self: *Self, key: *StringObj) ?Value {
+    pub inline fn get(self: *Self, key: *StringObj) ?*Value {
         if (self.count == 0) return null;
 
         const entry = findEntry(self.entries, self.entries.len, key);
-        if (entry.key) {
-            return entry.value;
+        if (entry.key != null) {
+            return &entry.value;
         } else return null;
     }
 

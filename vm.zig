@@ -34,6 +34,7 @@ pub const Vm = struct {
     objects: ?*Object.Object = null,
     allocator: Allocator,
     strings: HashTable,
+    globals: HashTable,
 
     pub fn test_init(allocator: Allocator, chunk: *Chunk) Self {
         var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0, .allocator = allocator };
@@ -43,12 +44,13 @@ pub const Vm = struct {
     }
 
     pub fn init(allocator: Allocator) Self {
-        return Self{ .ip = 0, .chunk = undefined, .allocator = allocator, .strings = HashTable.init(allocator) };
+        return Self{ .ip = 0, .chunk = undefined, .allocator = allocator, .strings = HashTable.init(allocator), .globals = HashTable.init(allocator) };
     }
 
     pub fn deinit(self: *Self) void {
         self.freeObjects();
         self.strings.deinit();
+        self.globals.deinit();
     }
 
     pub inline fn freeObjects(self: *Self) void {
@@ -111,6 +113,29 @@ pub const Vm = struct {
                 .op_nil => self.push(Value.NilValue()),
                 .op_true => self.push(Value.BooleanValue(true)),
                 .op_false => self.push(Value.BooleanValue(false)),
+                .op_pop => _ = self.pop(),
+                .op_define_global => {
+                    const val = self.read_constant();
+                    if (val.isObjType(Object.ObjectType.STRING)) {
+                        const name = val.obj.asString();
+                        _ = self.globals.set(name, self.peek());
+                        _ = self.pop();
+                    } else {
+                        return self.runtimeErr("FAILURE in VM Value was not and object {}\n");
+                    }
+                },
+                .op_get_global => {
+                    const val = self.read_constant();
+                    if (val.isObjType(Object.ObjectType.STRING)) {
+                        const name = val.obj.asString();
+                        const value = self.globals.get(name) orelse {
+                            return self.runtimeErr("Undefined variable '{s}'");
+                        };
+                        self.push(value.*);
+                    } else {
+                        return self.runtimeErr("FAILURE in VM Value was not and object");
+                    }
+                },
                 .op_equal => {
                     const b = self.pop();
                     const a = self.pop();

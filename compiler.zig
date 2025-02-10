@@ -107,6 +107,15 @@ pub const Parser = struct {
         self.compiler.emitConstant(Value.ObjectValue(&strObj.obj), self.previous.line);
     }
 
+    pub fn variable(self: *Self) void {
+        self.namedVar(self.previous);
+    }
+
+    pub fn namedVar(self: *Self, name: Token) void {
+        const arg = self.identifierConst(name);
+        self.compiler.emitBytes(OpCode.op_get_global.toU8(), arg, self.previous.line);
+    }
+
     pub fn number(self: *Self) void {
         const value = std.fmt.parseFloat(f64, self.previous.lexeme) catch unreachable;
         self.compiler.emitConstant(Value.NumberValue(value), self.previous.line);
@@ -117,19 +126,64 @@ pub const Parser = struct {
     }
 
     pub fn declaration(self: *Self) void {
-        self.statement();
+        if (self.match(TokenType.VAR)) {
+            self.varDeclaration();
+        } else {
+            self.statement();
+        }
+        if (self.panicMode) self.sync();
     }
 
     pub fn statement(self: *Self) void {
         if (self.match(TokenType.PRINT)) {
             self.printStatement();
+        } else {
+            self.exprStatement();
         }
+    }
+
+    pub fn exprStatement(self: *Self) void {
+        self.expr();
+        self.consume(TokenType.SEMICOLON, "Expected ';' after expression");
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
     }
 
     pub fn printStatement(self: *Self) void {
         self.expr();
         self.consume(TokenType.SEMICOLON, "Expected ';' after value.");
         self.compiler.emitByte(OpCode.op_print.toU8(), self.previous.line);
+    }
+
+    pub fn varDeclaration(self: *Self) void {
+        const global = self.parseVariable("Expected variable Name");
+
+        if (self.match(TokenType.EQUAL)) {
+            self.expr();
+        } else {
+            self.compiler.emitByte(OpCode.op_nil.toU8(), self.previous.line);
+        }
+
+        self.consume(TokenType.SEMICOLON, "Expected ';' after variable declaration.");
+        self.defineVar(global);
+    }
+
+    inline fn parseVariable(self: *Self, errmsg: []const u8) u8 {
+        self.consume(TokenType.IDENTIFIER, errmsg);
+        return self.identifierConst(self.previous);
+    }
+
+    inline fn identifierConst(self: *Self, tok: Token) u8 {
+        const identifier = Object.StringObj.copyStr(self.vm, tok.lexeme);
+        return self.makeConstant(Value.ObjectValue(&identifier.obj));
+    }
+
+    inline fn makeConstant(self: *Self, val: Value) u8 {
+        const constant = self.compiler.currentChunk().addConstant(val);
+        return @as(u8, @truncate(constant));
+    }
+
+    inline fn defineVar(self: *Self, global: u8) void {
+        self.compiler.emitBytes(OpCode.op_define_global.toU8(), global, self.previous.line);
     }
 
     pub fn grouping(self: *Self) void {
@@ -210,6 +264,24 @@ pub const Parser = struct {
     }
 
     //---------------- ERRHANDLING --------------------------//
+
+    inline fn sync(self: *Self) void {
+        self.panicMode = false;
+
+        while (self.current.token_type != TokenType.EOF) {
+            if (self.previous.token_type == TokenType.SEMICOLON) return;
+            switch (self.current.token_type) {
+                .CLASS, .FUN, .VAR, .FOR, .IF, .WHILE, .PRINT, .RETURN => {
+                    return;
+                },
+                else => {
+                    // Do noting!
+                },
+            }
+            self.advance();
+        }
+    }
+
     pub fn errAtCurrent(self: *Self, msg: []const u8) void {
         self.errAt(&self.current, msg);
     }
@@ -263,7 +335,7 @@ pub fn getRule(ttype: TokenType) ParseRule {
         .GREATEREQUAL => comptime ParseRule.init(null, Parser.binary, Precedence.COMPARISON),
         .LESS => comptime ParseRule.init(null, Parser.binary, Precedence.COMPARISON),
         .LESSEQUAL => comptime ParseRule.init(null, Parser.binary, Precedence.COMPARISON),
-        //.IDENTIFIER => comptime ParseRule.init(Parser.variable, null, Precedence.NONE),
+        .IDENTIFIER => comptime ParseRule.init(Parser.variable, null, Precedence.NONE),
         .STRING => comptime ParseRule.init(Parser.string, null, Precedence.NONE),
         .NUMBER => comptime ParseRule.init(Parser.number, null, Precedence.NONE),
         //.AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
