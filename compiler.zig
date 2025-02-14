@@ -31,7 +31,7 @@ const Precedence = enum {
     PRIMARY,
 };
 
-const ParseFn = *const fn (parser: *Parser) void;
+const ParseFn = *const fn (parser: *Parser, canAssign: bool) void;
 
 const ParseRule = struct {
     prefix: ?ParseFn,
@@ -102,21 +102,28 @@ pub const Parser = struct {
         self.errAtCurrent(msg);
     }
 
-    pub fn string(self: *Self) void {
+    pub fn string(self: *Self, canAssign: bool) void {
+        _ = canAssign;
         const strObj = Object.StringObj.copyStr(self.vm, self.previous.lexeme);
         self.compiler.emitConstant(Value.ObjectValue(&strObj.obj), self.previous.line);
     }
 
-    pub fn variable(self: *Self) void {
-        self.namedVar(self.previous);
+    pub fn variable(self: *Self, canAssign: bool) void {
+        self.namedVar(self.previous, canAssign);
     }
 
-    pub fn namedVar(self: *Self, name: Token) void {
+    pub fn namedVar(self: *Self, name: Token, canAssign: bool) void {
         const arg = self.identifierConst(name);
-        self.compiler.emitBytes(OpCode.op_get_global.toU8(), arg, self.previous.line);
+        if (canAssign and self.match(TokenType.EQUAL)) {
+            self.expr();
+            self.compiler.emitBytes(OpCode.op_set_global.toU8(), arg, self.previous.line);
+        } else {
+            self.compiler.emitBytes(OpCode.op_get_global.toU8(), arg, self.previous.line);
+        }
     }
 
-    pub fn number(self: *Self) void {
+    pub fn number(self: *Self, canAssign: bool) void {
+        _ = canAssign;
         const value = std.fmt.parseFloat(f64, self.previous.lexeme) catch unreachable;
         self.compiler.emitConstant(Value.NumberValue(value), self.previous.line);
     }
@@ -186,12 +193,14 @@ pub const Parser = struct {
         self.compiler.emitBytes(OpCode.op_define_global.toU8(), global, self.previous.line);
     }
 
-    pub fn grouping(self: *Self) void {
+    pub fn grouping(self: *Self, canAssign: bool) void {
+        _ = canAssign;
         self.expr();
         self.consume(TokenType.RIGHTPAREN, "Expected ')' after expression");
     }
 
-    pub fn literal(self: *Self) void {
+    pub fn literal(self: *Self, canAssign: bool) void {
+        _ = canAssign;
         switch (self.previous.token_type) {
             .FALSE => self.compiler.emitByte(OpCode.op_false.toU8(), self.previous.line),
             .TRUE => self.compiler.emitByte(OpCode.op_true.toU8(), self.previous.line),
@@ -200,7 +209,8 @@ pub const Parser = struct {
         }
     }
 
-    pub fn unary(self: *Self) void {
+    pub fn unary(self: *Self, canAssign: bool) void {
+        _ = canAssign;
         const operType = self.previous.token_type;
 
         //compile the operand
@@ -212,7 +222,8 @@ pub const Parser = struct {
         }
     }
 
-    pub fn binary(self: *Self) void {
+    pub fn binary(self: *Self, canAssign: bool) void {
+        _ = canAssign;
         const operType = self.previous.token_type;
         const rule = getRule(operType);
         self.parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1)); //this is shifting the byte by one
@@ -239,7 +250,8 @@ pub const Parser = struct {
             return;
         };
 
-        prefixRule(self);
+        const canAssign = @intFromEnum(precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
+        prefixRule(self, canAssign);
 
         while (@intFromEnum(precedence) <= @intFromEnum(getRule(self.current.token_type).precedence)) {
             self.advance();
@@ -247,7 +259,10 @@ pub const Parser = struct {
                 self.err("Expected expression.");
                 return;
             };
-            infixRule(self);
+            infixRule(self, canAssign);
+        }
+        if (canAssign and self.match(TokenType.EQUAL)) {
+            self.err("Invalid assignment target");
         }
     }
 

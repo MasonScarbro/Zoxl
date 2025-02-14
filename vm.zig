@@ -129,9 +129,22 @@ pub const Vm = struct {
                     if (val.isObjType(Object.ObjectType.STRING)) {
                         const name = val.obj.asString();
                         const value = self.globals.get(name) orelse {
-                            return self.runtimeErr("Undefined variable '{s}'");
+                            return self.runtimeErrW("Undefined variable '{s}'", .{name.chars});
                         };
                         self.push(value.*);
+                    } else {
+                        return self.runtimeErr("FAILURE in VM Value was not and object");
+                    }
+                },
+                .op_set_global => {
+                    const val = self.read_constant();
+                    if (val.isObjType(Object.ObjectType.STRING)) {
+                        const name = val.obj.asString();
+                        if (self.globals.set(name, self.peek())) {
+                            _ = self.globals.delete(name);
+                            return self.runtimeErrW("Undefined variable '{s}'", .{name.chars});
+                        }
+                        //self.push(value.*);
                     } else {
                         return self.runtimeErr("FAILURE in VM Value was not and object");
                     }
@@ -277,6 +290,21 @@ pub const Vm = struct {
         const err_writer = std.io.getStdErr().writer();
 
         err_writer.print("{s}.\n", .{msg}) catch {};
+
+        const instruction = self.ip - 1;
+        const line = self.chunk.lines.items[instruction];
+
+        err_writer.print("[line {d}] in ", .{line}) catch {};
+
+        self.reset_stack();
+        return InterpretErr.interpret_runtime_error;
+    }
+
+    // probably just meld this to one func
+    inline fn runtimeErrW(self: *Self, msg: []const u8, args: anytype) InterpretErr {
+        const err_writer = std.io.getStdErr().writer();
+
+        err_writer.print(msg ++ "\n", args) catch {};
 
         const instruction = self.ip - 1;
         const line = self.chunk.lines.items[instruction];
