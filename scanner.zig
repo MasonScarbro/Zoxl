@@ -203,6 +203,7 @@ pub const Scanner = struct {
             },
             else => return TokenType.IDENTIFIER,
         }
+
         return TokenType.IDENTIFIER;
     }
 

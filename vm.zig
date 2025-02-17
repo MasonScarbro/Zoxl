@@ -76,7 +76,7 @@ pub const Vm = struct {
         var chunk = Chunk.init(&self.allocator);
         defer chunk.deinit();
 
-        compile(self, source, &chunk) catch return InterpretErr.interpret_compile_error;
+        compile(self, source, &chunk, self.allocator) catch return InterpretErr.interpret_compile_error;
 
         self.ip = 0;
         self.chunk = &chunk;
@@ -148,6 +148,16 @@ pub const Vm = struct {
                     } else {
                         return self.runtimeErr("FAILURE in VM Value was not and object");
                     }
+                },
+                .op_set_local => {
+                    std.debug.print("Inside VM op_set_local", .{});
+                    const slot = self.read_instruction().toU8();
+                    self.stack[slot] = self.peek();
+                },
+                .op_get_local => {
+                    std.debug.print("Inside VM op_get_local", .{});
+                    const slot = self.read_instruction().toU8();
+                    self.push(self.stack[slot]);
                 },
                 .op_equal => {
                     const b = self.pop();

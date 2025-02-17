@@ -33,6 +33,8 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
         .op_define_global => constInstruction(instruction.toString(), chunk, offset),
         .op_get_global => constInstruction(instruction.toString(), chunk, offset),
         .op_set_global => constInstruction(instruction.toString(), chunk, offset),
+        .op_get_local => byteInstruction(instruction.toString(), chunk, offset),
+        .op_set_local => byteInstruction(instruction.toString(), chunk, offset),
         .op_nil => simpleInstruction(instruction.toString(), offset),
         .op_not => simpleInstruction(instruction.toString(), offset),
         .op_greater => simpleInstruction(instruction.toString(), offset),
@@ -84,7 +86,12 @@ pub fn constInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     std.debug.print("{s: <16} '{}'\n", .{ name, constant });
     return offset + 2;
 }
-
+fn byteInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
+    const slot = chunk.code.items[offset + 1];
+    std.debug.print("{s} {d} \n", .{ name, slot });
+    std.debug.print("\n", .{});
+    return offset + 2;
+}
 pub fn printStack(stack: []Value) void {
     std.debug.print("          ", .{});
 

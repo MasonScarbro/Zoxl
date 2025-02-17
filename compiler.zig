@@ -9,7 +9,7 @@ const Object = @import("./object.zig");
 const Vm = @import("./vm.zig").Vm;
 const disassembleChunk = @import("./debugging.zig").disassembleChunk;
 const initStdErr = @import("./main.zig").initStdErr();
-
+const Allocator = std.mem.Allocator;
 const debug_parse_rule = true;
 
 const CompileError = error{
@@ -33,6 +33,11 @@ const Precedence = enum {
 
 const ParseFn = *const fn (parser: *Parser, canAssign: bool) void;
 
+const Local = struct {
+    name: Token,
+    depth: ?usize = null,
+};
+
 const ParseRule = struct {
     prefix: ?ParseFn,
     infix: ?ParseFn,
@@ -47,9 +52,10 @@ const ParseRule = struct {
     }
 };
 
-pub fn compile(vm: *Vm, src: []const u8, chunk: *Chunk) CompileError!void {
+pub fn compile(vm: *Vm, src: []const u8, chunk: *Chunk, allocator: Allocator) CompileError!void {
     var scanner = Scanner.init(src);
-    var compiler = Compiler.init(chunk);
+    std.debug.print("Scanner Done", .{});
+    var compiler = Compiler.init(chunk, allocator);
     var parser = Parser.init(vm, &scanner, &compiler);
     parser.advance(); //Kick off parser
     if (parser.hadErr == true) return CompileError.ScannerErr;
@@ -113,13 +119,46 @@ pub const Parser = struct {
     }
 
     pub fn namedVar(self: *Self, name: Token, canAssign: bool) void {
-        const arg = self.identifierConst(name);
+        std.debug.print("\nInside Resolve Named Var", .{});
+        var getOp: OpCode = undefined;
+        var setOp: OpCode = undefined;
+        var arg: u8 = undefined;
+
+        if (self.resolveLocal(name)) |local| {
+            arg = local;
+
+            getOp = OpCode.op_get_local;
+            setOp = OpCode.op_set_local;
+        } else {
+            arg = self.identifierConst(name);
+            getOp = OpCode.op_get_global;
+            setOp = OpCode.op_set_global;
+        }
+
         if (canAssign and self.match(TokenType.EQUAL)) {
             self.expr();
-            self.compiler.emitBytes(OpCode.op_set_global.toU8(), arg, self.previous.line);
+            self.compiler.emitBytes(setOp.toU8(), arg, self.previous.line);
         } else {
-            self.compiler.emitBytes(OpCode.op_get_global.toU8(), arg, self.previous.line);
+            self.compiler.emitBytes(getOp.toU8(), arg, self.previous.line);
         }
+    }
+
+    pub fn resolveLocal(self: *Self, name: Token) ?u8 {
+        std.debug.print("\nInside Resolve Local", .{});
+        var i: usize = self.compiler.localCount;
+        while (i > 0) {
+            i -= 1;
+            const local = self.compiler.locals.items[@as(usize, @intCast(i))];
+            if (self.identifiersEqual(name, local.name)) {
+                if (local.depth == null) {
+                    self.err("Can't read local variable in its own initializer.");
+                }
+                return @as(u8, @intCast(i));
+            }
+        }
+
+        //else not a local
+        return null;
     }
 
     pub fn number(self: *Self, canAssign: bool) void {
@@ -130,6 +169,14 @@ pub const Parser = struct {
 
     pub fn expr(self: *Self) void {
         self.parsePrecedence(Precedence.ASSIGNMENT);
+    }
+
+    pub fn block(self: *Self) void {
+        while (!self.check(TokenType.RIGHTBRACE) and !self.check(TokenType.EOF)) {
+            self.declaration();
+        }
+
+        self.consume(TokenType.RIGHTBRACE, "Expected '}' after block");
     }
 
     pub fn declaration(self: *Self) void {
@@ -144,6 +191,10 @@ pub const Parser = struct {
     pub fn statement(self: *Self) void {
         if (self.match(TokenType.PRINT)) {
             self.printStatement();
+        } else if (self.match(TokenType.LEFTBRACE)) {
+            self.compiler.beginScope();
+            self.block();
+            self.compiler.endScope(self.previous.line);
         } else {
             self.exprStatement();
         }
@@ -162,6 +213,7 @@ pub const Parser = struct {
     }
 
     pub fn varDeclaration(self: *Self) void {
+        std.debug.print("\nInside varDeclaration\n", .{});
         const global = self.parseVariable("Expected variable Name");
 
         if (self.match(TokenType.EQUAL)) {
@@ -176,6 +228,10 @@ pub const Parser = struct {
 
     inline fn parseVariable(self: *Self, errmsg: []const u8) u8 {
         self.consume(TokenType.IDENTIFIER, errmsg);
+        std.debug.print("\nInside parseVariable\n", .{});
+        self.declareVar();
+        if (self.compiler.scopeDepth > 0) return 0;
+
         return self.identifierConst(self.previous);
     }
 
@@ -189,8 +245,41 @@ pub const Parser = struct {
         return @as(u8, @truncate(constant));
     }
 
+    inline fn declareVar(self: *Self) void {
+        std.debug.print("\nInside declareVar\n", .{});
+        if (self.compiler.scopeDepth == 0) return; //global just bail
+
+        var i = self.compiler.localCount;
+
+        while (i > 0) {
+            i -= 1;
+            std.debug.print("\nunreachable\n", .{});
+            const local = self.compiler.locals.items[@as(usize, @intCast(i))];
+            if (local.depth != null and local.depth.? < self.compiler.scopeDepth) {
+                break;
+            }
+            if (self.identifiersEqual(self.previous, local.name)) {
+                self.err("Already a variable with this name in this scope.");
+            }
+        }
+        self.compiler.addLocal(self.previous);
+    }
+
+    fn identifiersEqual(self: *Self, a: Token, b: Token) bool {
+        _ = self;
+        return std.mem.eql(u8, a.lexeme, b.lexeme);
+    }
+
     inline fn defineVar(self: *Self, global: u8) void {
+        if (self.compiler.scopeDepth > 0) {
+            self.markInitialized();
+            return;
+        }
         self.compiler.emitBytes(OpCode.op_define_global.toU8(), global, self.previous.line);
+    }
+
+    inline fn markInitialized(self: *Self) void {
+        self.compiler.locals.items[self.compiler.localCount - 1].depth = self.compiler.scopeDepth;
     }
 
     pub fn grouping(self: *Self, canAssign: bool) void {
@@ -384,13 +473,47 @@ pub const Compiler = struct {
 
     compilingChunk: *Chunk = undefined,
     hadErr: bool = false,
+    locals: std.ArrayList(Local),
+    localCount: usize = 0,
+    scopeDepth: usize = 0,
 
-    pub fn init(chunk: *Chunk) Self {
-        return Self{
-            .compilingChunk = chunk,
-        };
+    pub fn init(chunk: *Chunk, allocator: Allocator) Self {
+        std.debug.print("\nIniting Compiler", .{});
+        return Self{ .compilingChunk = chunk, .locals = std.ArrayList(Local).init(allocator) };
     }
 
+    pub fn addLocal(self: *Self, name: Token) void {
+        std.debug.print("\nTrying to make new local", .{});
+        const newLocal = Local{
+            .name = name,
+            .depth = 0,
+        };
+
+        if (self.locals.append(newLocal)) |*_| {
+            self.localCount += 1;
+        } else |_| {
+            std.debug.print("\nERR: Failed appending newLocal????", .{});
+            self.hadErr = true;
+        }
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.locals.deinit();
+    }
+
+    pub fn beginScope(self: *Self) void {
+        std.debug.print("\nBeginning Scope", .{});
+        self.scopeDepth += 1;
+    }
+
+    pub fn endScope(self: *Self, line: usize) void {
+        self.scopeDepth -= 1;
+        while (self.localCount > 0 and self.locals.items[self.localCount - 1].depth.? > self.scopeDepth) {
+            self.emitByte(OpCode.op_pop.toU8(), line);
+            self.localCount -= 1;
+        }
+        std.debug.print("\nEnding Scope", .{});
+    }
     pub fn emitByte(self: *Self, byte: u8, line: usize) void {
         try self.currentChunk().writeChunk(byte, line);
     }
