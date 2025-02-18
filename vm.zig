@@ -164,6 +164,14 @@ pub const Vm = struct {
                     const a = self.pop();
                     self.push(Value.BooleanValue(b.equals(a)));
                 },
+                .op_jump_if_false => {
+                    const offset = self.read_twoBytes();
+                    if (isFalsey(self.peek())) self.ip += offset;
+                },
+                .op_jump => {
+                    const offset = self.read_twoBytes();
+                    self.ip += offset;
+                },
                 .op_greater => self.binaryOp(instruction),
                 .op_less => self.binaryOp(instruction),
                 .op_not => {
@@ -206,6 +214,12 @@ pub const Vm = struct {
         const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
+    }
+
+    inline fn read_twoBytes(self: *Self) u16 {
+        const b1 = self.read_byte();
+        const b2 = self.read_byte();
+        return (@as(u16, @intCast(b1)) << 8 | @as(u16, @intCast(b2)));
     }
 
     inline fn read_constant(self: *Self) Value {

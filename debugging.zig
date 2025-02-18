@@ -35,6 +35,8 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
         .op_set_global => constInstruction(instruction.toString(), chunk, offset),
         .op_get_local => byteInstruction(instruction.toString(), chunk, offset),
         .op_set_local => byteInstruction(instruction.toString(), chunk, offset),
+        .op_jump => jumpInstruction(instruction.toString(), 1, chunk, offset),
+        .op_jump_if_false => jumpInstruction(instruction.toString(), 1, chunk, offset),
         .op_nil => simpleInstruction(instruction.toString(), offset),
         .op_not => simpleInstruction(instruction.toString(), offset),
         .op_greater => simpleInstruction(instruction.toString(), offset),
@@ -77,6 +79,14 @@ pub fn longConstInstruction(name: []const u8, chunk: *Chunk, offset: usize) usiz
         std.debug.print("Failed to print ending quote: {}\n", .{err});
     };
     return offset + 4;
+}
+
+fn jumpInstruction(name: []const u8, sign: isize, chunk: *Chunk, offset: usize) usize {
+    var jump = @as(u16, chunk.code.items[offset + 1]) << 8;
+    jump |= chunk.code.items[offset + 2];
+    const target = @as(isize, @intCast(offset)) + 3 + sign * @as(isize, @intCast(jump));
+    std.debug.print("{s} {d} -> {d}\n", .{ name, offset, target });
+    return offset + 3;
 }
 
 pub fn constInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {

@@ -119,7 +119,9 @@ pub const Parser = struct {
     }
 
     pub fn namedVar(self: *Self, name: Token, canAssign: bool) void {
-        std.debug.print("\nInside Resolve Named Var", .{});
+
+        //std.debug.print("\nInside Resolve Named Var", .{});
+
         var getOp: OpCode = undefined;
         var setOp: OpCode = undefined;
         var arg: u8 = undefined;
@@ -144,7 +146,9 @@ pub const Parser = struct {
     }
 
     pub fn resolveLocal(self: *Self, name: Token) ?u8 {
-        std.debug.print("\nInside Resolve Local", .{});
+
+        //std.debug.print("\nInside Resolve Local", .{});
+
         var i: usize = self.compiler.localCount;
         while (i > 0) {
             i -= 1;
@@ -191,6 +195,8 @@ pub const Parser = struct {
     pub fn statement(self: *Self) void {
         if (self.match(TokenType.PRINT)) {
             self.printStatement();
+        } else if (self.match(TokenType.IF)) {
+            self.ifStatement();
         } else if (self.match(TokenType.LEFTBRACE)) {
             self.compiler.beginScope();
             self.block();
@@ -212,8 +218,30 @@ pub const Parser = struct {
         self.compiler.emitByte(OpCode.op_print.toU8(), self.previous.line);
     }
 
+    pub fn ifStatement(self: *Self) void {
+        self.consume(TokenType.LEFTPAREN, "Expected '(' after if");
+        self.expr();
+        self.consume(TokenType.RIGHTPAREN, "Expected ')' after condition");
+
+        const thenJump = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
+        //When the condition is truthy, we pop it right before the code inside the then branch.
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+
+        self.statement();
+
+        const elseJump = self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line);
+
+        self.compiler.patchJump(thenJump);
+        //Otherwise, we pop it at the beginning of the else branch.
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+
+        if (self.match(TokenType.ELSE)) self.statement();
+
+        self.compiler.patchJump(elseJump);
+    }
+
     pub fn varDeclaration(self: *Self) void {
-        std.debug.print("\nInside varDeclaration\n", .{});
+        //std.debug.print("\nInside varDeclaration\n", .{});
         const global = self.parseVariable("Expected variable Name");
 
         if (self.match(TokenType.EQUAL)) {
@@ -228,7 +256,7 @@ pub const Parser = struct {
 
     inline fn parseVariable(self: *Self, errmsg: []const u8) u8 {
         self.consume(TokenType.IDENTIFIER, errmsg);
-        std.debug.print("\nInside parseVariable\n", .{});
+        //std.debug.print("\nInside parseVariable\n", .{});
         self.declareVar();
         if (self.compiler.scopeDepth > 0) return 0;
 
@@ -542,5 +570,20 @@ pub const Compiler = struct {
     pub fn emitBytes(self: *Self, byte1: u8, byte2: u8, line: usize) void {
         self.emitByte(byte1, line);
         self.emitByte(byte2, line);
+    }
+
+    pub fn emitJump(self: *Self, instruction: u8, line: usize) usize {
+        self.emitByte(instruction, line);
+        self.emitByte(0xff, line);
+        self.emitByte(0xff, line);
+        return self.currentChunk().code.count - 2;
+    }
+
+    pub fn patchJump(self: *Self, offset: usize) void {
+        // -2 to adjusty for the bytecode for the jump offset itself
+        const jump = self.currentChunk().code.count - offset - 2;
+
+        self.currentChunk().code.items[offset] = @as(u8, @truncate(jump >> 8)) & 0xff;
+        self.currentChunk().code.items[offset + 1] = @as(u8, @truncate(jump)) & 0xff;
     }
 };
