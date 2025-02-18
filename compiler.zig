@@ -197,6 +197,8 @@ pub const Parser = struct {
             self.printStatement();
         } else if (self.match(TokenType.IF)) {
             self.ifStatement();
+        } else if (self.match(TokenType.SWITCH)) {
+            self.switchStatement();
         } else if (self.match(TokenType.LEFTBRACE)) {
             self.compiler.beginScope();
             self.block();
@@ -216,6 +218,70 @@ pub const Parser = struct {
         self.expr();
         self.consume(TokenType.SEMICOLON, "Expected ';' after value.");
         self.compiler.emitByte(OpCode.op_print.toU8(), self.previous.line);
+    }
+
+    pub fn switchStatement(self: *Self) void {
+        self.consume(TokenType.LEFTPAREN, "Expected '(' after switch");
+        self.expr();
+        self.consume(TokenType.RIGHTPAREN, "Expected ')' after condition");
+        self.consume(TokenType.LEFTBRACE, "Expected '{' after Switch case");
+
+        var state = 0;
+        var caseEnds = std.ArrayList(comptime_int);
+        var caseCount = 0;
+        var previousCaseSkip = -1;
+
+        while (!self.match(TokenType.RIGHTBRACE) and !self.match(TokenType.EOF)) {
+            if (self.match(TokenType.DOT)) {
+                const caseType = self.previous.token_type;
+
+                if (state == 2) self.err("Cant have another case or default after default");
+
+                if (state == 1) {
+                    // At the end of the previous case, jump over the others.
+                    caseEnds[caseCount] = self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line);
+                    caseCount += 1;
+
+                    // Patch its condition to jump to the next case (this one)
+                    self.compiler.patchJump(previousCaseSkip);
+                    self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                }
+                if (caseType == TokenType.DOT) {
+                    state = 1;
+
+                    self.compiler.emitByte(OpCode.op_duplicate.toU8(), self.previous.line);
+                    self.expr();
+
+                    //PlaceHolder for colon/Lambda
+                    self.consume(TokenType.BANG, "Expected '=>' after case value");
+
+                    self.compiler.emitByte(OpCode.op_equal.toU8(), self.previous.line);
+                    previousCaseSkip = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
+
+                    self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                } else {
+                    state = 2;
+                    //PlaceHolder for colon/Lambda
+                    self.consume(TokenType.BANG, "Expected '=>' after default");
+                }
+            } else {
+                if (state == 0) {
+                    self.err("Cant have statements before any case");
+                }
+                self.statement();
+            }
+        }
+        if (state == 1) {
+            self.compiler.patchJump(previousCaseSkip);
+            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+        }
+
+        var i = 0;
+        while (i < caseCount) {
+            self.compiler.patchJump(caseEnds[i]);
+            i += 1;
+        }
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
     }
 
     pub fn ifStatement(self: *Self) void {
