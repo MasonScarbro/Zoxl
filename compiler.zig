@@ -310,6 +310,31 @@ pub const Parser = struct {
         self.compiler.locals.items[self.compiler.localCount - 1].depth = self.compiler.scopeDepth;
     }
 
+    pub fn logical_and(self: *Self, canAssign: bool) void {
+        _ = canAssign;
+        // jump if falsey
+        const endJump = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
+        // otherwise discard left
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+
+        self.parsePrecedence(Precedence.AND);
+        //patch jump
+        self.compiler.patchJump(endJump);
+    }
+
+    pub fn logical_or(self: *Self, canAssign: bool) void {
+        _ = canAssign;
+        // if falsey tiny jump to other expression
+        const elseJump = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
+
+        const endJump = self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line);
+
+        self.compiler.patchJump(elseJump);
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+
+        self.parsePrecedence(Precedence.OR);
+        self.compiler.patchJump(endJump);
+    }
     pub fn grouping(self: *Self, canAssign: bool) void {
         _ = canAssign;
         self.expr();
@@ -470,15 +495,15 @@ pub fn getRule(ttype: TokenType) ParseRule {
         .IDENTIFIER => comptime ParseRule.init(Parser.variable, null, Precedence.NONE),
         .STRING => comptime ParseRule.init(Parser.string, null, Precedence.NONE),
         .NUMBER => comptime ParseRule.init(Parser.number, null, Precedence.NONE),
-        //.AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
+        .AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
         //.CLASS => comptime ParseRule.init(null, null, Precedence.NONE),
         //.ELSE => comptime ParseRule.init(null, null, Precedence.NONE),
         .FALSE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
         //.FOR => comptime ParseRule.init(null, null, Precedence.NONE),
         //.FUN => comptime ParseRule.init(null, null, Precedence.NONE),
-        //.IF => comptime ParseRule.init(null, null, Precedence.NONE),
+        .IF => comptime ParseRule.init(null, null, Precedence.NONE),
         .NIL => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
-        //.OR => comptime ParseRule.init(null, Parser.logical_or, Precedence.OR),
+        .OR => comptime ParseRule.init(null, Parser.logical_or, Precedence.OR),
         //.PRINT => comptime ParseRule.init(null, null, Precedence.NONE),
         //.RETURN => comptime ParseRule.init(null, null, Precedence.NONE),
         //.SUPER => comptime ParseRule.init(Parser.super, null, Precedence.NONE),
