@@ -43,3 +43,45 @@ test "Compiler Correctly prints result" {
     defer vm.deinit();
     //try compile(src, &chunk);
 }
+
+test "Test Switch_1" {
+    const src = "switch (true) { case true => {print true;} case false => {print false;} }";
+    const allocator = std.testing.allocator;
+
+    var vm = Vm.init(allocator);
+    try vm.interpret(src);
+
+    // const result = vm.pop();
+
+    // printValue(result);
+    defer vm.deinit();
+    //try compile(src, &chunk);
+}
+
+test "Test Switch_2" {
+    const src = "switch (true) { case true => {print true;} } print 5;";
+    const allocator = std.testing.allocator;
+
+    var vm = Vm.init(allocator);
+    try vm.interpret(src);
+
+    // const result = vm.pop();
+
+    // printValue(result);
+    defer vm.deinit();
+    //try compile(src, &chunk);
+}
+
+test "Test Switch_3" {
+    const src = "switch (false) { case true => {print true;} }";
+    const allocator = std.testing.allocator;
+
+    var vm = Vm.init(allocator);
+    try vm.interpret(src);
+
+    // const result = vm.pop();
+
+    // printValue(result);
+    defer vm.deinit();
+    //try compile(src, &chunk);
+}

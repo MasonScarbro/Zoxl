@@ -23,6 +23,7 @@ pub const TokenType = enum {
     GREATEREQUAL,
     LESS,
     LESSEQUAL,
+    LAMBDA,
 
     // Literals.
     IDENTIFIER,
@@ -32,6 +33,8 @@ pub const TokenType = enum {
     // Keywords.
     AND,
     SWITCH,
+    CASE,
+    DEFAULT,
     CLASS,
     ELSE,
     FALSE,
@@ -97,7 +100,13 @@ pub const Scanner = struct {
                 return self.createToken(if (self.match('=')) TokenType.BANGEQUAL else TokenType.BANG);
             },
             '=' => {
-                return self.createToken(if (self.match('=')) TokenType.EQUALEQUAL else TokenType.EQUAL);
+                if (self.match('=')) {
+                    return self.createToken(TokenType.EQUALEQUAL);
+                } else if (self.match('>')) {
+                    return self.createToken(TokenType.LAMBDA);
+                } else {
+                    return self.createToken(TokenType.EQUAL);
+                }
             },
             '<' => {
                 return self.createToken(if (self.match('=')) TokenType.LESSEQUAL else TokenType.LESS);
@@ -171,18 +180,29 @@ pub const Scanner = struct {
         std.debug.print("\n self.src[self.start] = {c}", .{self.src[self.start]});
         switch (self.src[self.start]) {
             'a' => return self.checkKeyword(1, 2, "nd", TokenType.AND),
-            'c' => return self.checkKeyword(1, 4, "lass", TokenType.CLASS),
+            'c' => {
+                if (self.current - self.start > 1) {
+                    return switch (self.src[self.start + 1]) {
+                        'l' => return self.checkKeyword(2, 3, "ass", TokenType.CLASS),
+                        'a' => return self.checkKeyword(2, 2, "se", TokenType.CASE),
+                        else => return TokenType.IDENTIFIER,
+                    };
+                }
+            },
             'e' => return self.checkKeyword(1, 3, "lse", TokenType.ELSE),
             'i' => return self.checkKeyword(1, 1, "f", TokenType.IF),
             'n' => return self.checkKeyword(1, 2, "il", TokenType.NIL),
             'o' => return self.checkKeyword(1, 1, "r", TokenType.OR),
             'p' => return self.checkKeyword(1, 4, "rint", TokenType.PRINT),
             'r' => return self.checkKeyword(1, 5, "eturn", TokenType.RETURN),
+            'd' => return self.checkKeyword(1, 6, "efault", TokenType.DEFAULT),
+
             's' => {
                 if (self.current - self.start > 1) {
                     return switch (self.src[self.start + 1]) {
                         'u' => return self.checkKeyword(2, 3, "per", TokenType.SUPER),
                         'w' => return self.checkKeyword(2, 4, "itch", TokenType.SWITCH),
+                        else => return TokenType.IDENTIFIER,
                     };
                 }
             },

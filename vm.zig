@@ -114,6 +114,7 @@ pub const Vm = struct {
                 .op_true => self.push(Value.BooleanValue(true)),
                 .op_false => self.push(Value.BooleanValue(false)),
                 .op_pop => _ = self.pop(),
+                .op_duplicate => self.push(self.peek()),
                 .op_define_global => {
                     const val = self.read_constant();
                     if (val.isObjType(Object.ObjectType.STRING)) {

@@ -226,34 +226,40 @@ pub const Parser = struct {
         self.consume(TokenType.RIGHTPAREN, "Expected ')' after condition");
         self.consume(TokenType.LEFTBRACE, "Expected '{' after Switch case");
 
-        var state = 0;
-        var caseEnds = std.ArrayList(comptime_int);
-        var caseCount = 0;
-        var previousCaseSkip = -1;
+        var state: usize = 0; // 0: before all cases, 1: In a case, 2: after default.
+        var caseEnds = std.ArrayList(usize).init(self.compiler.allocator);
+        var caseCount: usize = 0;
+        var previousCaseSkip: ?usize = null;
 
         while (!self.match(TokenType.RIGHTBRACE) and !self.match(TokenType.EOF)) {
-            if (self.match(TokenType.DOT)) {
+            if (self.match(TokenType.CASE) or self.match(TokenType.DEFAULT)) {
                 const caseType = self.previous.token_type;
 
                 if (state == 2) self.err("Cant have another case or default after default");
 
                 if (state == 1) {
                     // At the end of the previous case, jump over the others.
-                    caseEnds[caseCount] = self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line);
-                    caseCount += 1;
+                    if (caseEnds.append(self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line))) |*_| {
+                        caseCount += 1;
+                    } else |_| {
+                        std.debug.print("\nERR: Failed appending for fucks sake Zig fix this", .{});
+                        self.hadErr = true;
+                    }
 
                     // Patch its condition to jump to the next case (this one)
-                    self.compiler.patchJump(previousCaseSkip);
-                    self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                    if (previousCaseSkip) |skip| {
+                        self.compiler.patchJump(skip);
+                        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                    }
                 }
-                if (caseType == TokenType.DOT) {
+                if (caseType == TokenType.CASE) {
                     state = 1;
 
                     self.compiler.emitByte(OpCode.op_duplicate.toU8(), self.previous.line);
                     self.expr();
 
                     //PlaceHolder for colon/Lambda
-                    self.consume(TokenType.BANG, "Expected '=>' after case value");
+                    self.consume(TokenType.LAMBDA, "Expected '=>' after case value");
 
                     self.compiler.emitByte(OpCode.op_equal.toU8(), self.previous.line);
                     previousCaseSkip = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
@@ -261,8 +267,9 @@ pub const Parser = struct {
                     self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
                 } else {
                     state = 2;
-                    //PlaceHolder for colon/Lambda
-                    self.consume(TokenType.BANG, "Expected '=>' after default");
+                    //PlaceHolder for colon
+                    self.consume(TokenType.LAMBDA, "Expected '=>' after default");
+                    previousCaseSkip = null;
                 }
             } else {
                 if (state == 0) {
@@ -271,17 +278,22 @@ pub const Parser = struct {
                 self.statement();
             }
         }
+        // If we ended without a default case, patch its condition jump.
         if (state == 1) {
-            self.compiler.patchJump(previousCaseSkip);
-            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+            if (previousCaseSkip) |skip| {
+                self.compiler.patchJump(skip);
+                self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+            }
         }
 
-        var i = 0;
-        while (i < caseCount) {
-            self.compiler.patchJump(caseEnds[i]);
-            i += 1;
+        for (caseEnds.items) |jumpOffset| {
+            self.compiler.patchJump(jumpOffset);
         }
-        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+
+        if (caseCount > 1) {
+            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+        }
+        caseEnds.deinit();
     }
 
     pub fn ifStatement(self: *Self) void {
@@ -562,12 +574,15 @@ pub fn getRule(ttype: TokenType) ParseRule {
         .STRING => comptime ParseRule.init(Parser.string, null, Precedence.NONE),
         .NUMBER => comptime ParseRule.init(Parser.number, null, Precedence.NONE),
         .AND => comptime ParseRule.init(null, Parser.logical_and, Precedence.AND),
+        .LAMBDA => comptime ParseRule.init(null, null, Precedence.NONE),
         //.CLASS => comptime ParseRule.init(null, null, Precedence.NONE),
         //.ELSE => comptime ParseRule.init(null, null, Precedence.NONE),
         .FALSE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
         //.FOR => comptime ParseRule.init(null, null, Precedence.NONE),
         //.FUN => comptime ParseRule.init(null, null, Precedence.NONE),
         .IF => comptime ParseRule.init(null, null, Precedence.NONE),
+        .CASE => comptime ParseRule.init(null, null, Precedence.NONE),
+        .SWITCH => comptime ParseRule.init(null, null, Precedence.NONE),
         .NIL => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
         .OR => comptime ParseRule.init(null, Parser.logical_or, Precedence.OR),
         //.PRINT => comptime ParseRule.init(null, null, Precedence.NONE),
@@ -591,6 +606,7 @@ pub const Compiler = struct {
     const Self = @This();
 
     compilingChunk: *Chunk = undefined,
+    allocator: Allocator,
     hadErr: bool = false,
     locals: std.ArrayList(Local),
     localCount: usize = 0,
@@ -598,7 +614,7 @@ pub const Compiler = struct {
 
     pub fn init(chunk: *Chunk, allocator: Allocator) Self {
         std.debug.print("\nIniting Compiler", .{});
-        return Self{ .compilingChunk = chunk, .locals = std.ArrayList(Local).init(allocator) };
+        return Self{ .compilingChunk = chunk, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator) };
     }
 
     pub fn addLocal(self: *Self, name: Token) void {

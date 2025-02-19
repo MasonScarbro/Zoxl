@@ -30,6 +30,7 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
         .op_false => simpleInstruction(instruction.toString(), offset),
         .op_true => simpleInstruction(instruction.toString(), offset),
         .op_pop => simpleInstruction(instruction.toString(), offset),
+        .op_duplicate => simpleInstruction(instruction.toString(), offset),
         .op_define_global => constInstruction(instruction.toString(), chunk, offset),
         .op_get_global => constInstruction(instruction.toString(), chunk, offset),
         .op_set_global => constInstruction(instruction.toString(), chunk, offset),
