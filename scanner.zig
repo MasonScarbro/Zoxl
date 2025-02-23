@@ -34,6 +34,7 @@ pub const TokenType = enum {
     AND,
     SWITCH,
     CASE,
+    NOBREAK,
     DEFAULT,
     CLASS,
     ELSE,
@@ -191,7 +192,15 @@ pub const Scanner = struct {
             },
             'e' => return self.checkKeyword(1, 3, "lse", TokenType.ELSE),
             'i' => return self.checkKeyword(1, 1, "f", TokenType.IF),
-            'n' => return self.checkKeyword(1, 2, "il", TokenType.NIL),
+            'n' => {
+                if (self.current - self.start > 1) {
+                    return switch (self.src[self.start + 1]) {
+                        'o' => return self.checkKeyword(2, 5, "break", TokenType.NOBREAK),
+                        'i' => return self.checkKeyword(2, 1, "l", TokenType.NIL),
+                        else => return TokenType.IDENTIFIER,
+                    };
+                }
+            },
             'o' => return self.checkKeyword(1, 1, "r", TokenType.OR),
             'p' => return self.checkKeyword(1, 4, "rint", TokenType.PRINT),
             'r' => return self.checkKeyword(1, 5, "eturn", TokenType.RETURN),

@@ -5,6 +5,7 @@ const Token = @import("./scanner.zig").Token;
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
+const printStack = @import("debugging.zig").printStack;
 const Object = @import("./object.zig");
 const Vm = @import("./vm.zig").Vm;
 const disassembleChunk = @import("./debugging.zig").disassembleChunk;
@@ -229,6 +230,7 @@ pub const Parser = struct {
         var state: usize = 0; // 0: before all cases, 1: In a case, 2: after default.
         var caseEnds = std.ArrayList(usize).init(self.compiler.allocator);
         var caseCount: usize = 0;
+        var fallthroughAllowed = false;
         var previousCaseSkip: ?usize = null;
 
         while (!self.match(TokenType.RIGHTBRACE) and !self.match(TokenType.EOF)) {
@@ -239,32 +241,45 @@ pub const Parser = struct {
 
                 if (state == 1) {
                     // At the end of the previous case, jump over the others.
-                    if (caseEnds.append(self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line))) |*_| {
-                        caseCount += 1;
-                    } else |_| {
-                        std.debug.print("\nERR: Failed appending for fucks sake Zig fix this", .{});
-                        self.hadErr = true;
+                    const didFall = fallthroughAllowed; // capture state of fallthrough
+                    if (!didFall) {
+                        if (caseEnds.append(self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line))) |*_| {
+                            caseCount += 1;
+                        } else |_| {
+                            std.debug.print("\nERR: Failed appending for fucks sake Zig fix this", .{});
+                            self.hadErr = true;
+                        }
                     }
-
                     // Patch its condition to jump to the next case (this one)
                     if (previousCaseSkip) |skip| {
                         self.compiler.patchJump(skip);
-                        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                        if (!didFall) { //dont pop if falling through
+                            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                        }
                     }
+                    fallthroughAllowed = false; // reset to false or next case
                 }
                 if (caseType == TokenType.CASE) {
                     state = 1;
-
+                    std.debug.print("\nSTACK PRINTED: \n", .{});
+                    //printStack(&self.vm.stack);
                     self.compiler.emitByte(OpCode.op_duplicate.toU8(), self.previous.line);
                     self.expr();
 
-                    //PlaceHolder for colon/Lambda
                     self.consume(TokenType.LAMBDA, "Expected '=>' after case value");
 
                     self.compiler.emitByte(OpCode.op_equal.toU8(), self.previous.line);
                     previousCaseSkip = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
 
                     self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+
+                    if (self.match(TokenType.NOBREAK)) {
+                        std.debug.print("NO BREAK ENCOUNTERED", .{});
+                        fallthroughAllowed = true;
+                        if (!self.check(TokenType.LEFTBRACE)) {
+                            self.consume(TokenType.SEMICOLON, "Expected ';' after 'nobreak'");
+                        }
+                    }
                 } else {
                     state = 2;
                     //PlaceHolder for colon
@@ -282,7 +297,9 @@ pub const Parser = struct {
         if (state == 1) {
             if (previousCaseSkip) |skip| {
                 self.compiler.patchJump(skip);
-                self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                if (!fallthroughAllowed) { //dont pop if falling through
+                    self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+                }
             }
         }
 
@@ -290,11 +307,16 @@ pub const Parser = struct {
             self.compiler.patchJump(jumpOffset);
         }
 
+        // Dont ask why this works
         if (caseCount > 1) {
             self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
         }
         caseEnds.deinit();
     }
+
+    // pub fn noBreak(self: *Self) void {
+
+    // }
 
     pub fn ifStatement(self: *Self) void {
         self.consume(TokenType.LEFTPAREN, "Expected '(' after if");
@@ -582,10 +604,11 @@ pub fn getRule(ttype: TokenType) ParseRule {
         //.FUN => comptime ParseRule.init(null, null, Precedence.NONE),
         .IF => comptime ParseRule.init(null, null, Precedence.NONE),
         .CASE => comptime ParseRule.init(null, null, Precedence.NONE),
+        .NOBREAK => comptime ParseRule.init(null, null, Precedence.NONE),
         .SWITCH => comptime ParseRule.init(null, null, Precedence.NONE),
         .NIL => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
         .OR => comptime ParseRule.init(null, Parser.logical_or, Precedence.OR),
-        //.PRINT => comptime ParseRule.init(null, null, Precedence.NONE),
+        .PRINT => comptime ParseRule.init(null, null, Precedence.NONE),
         //.RETURN => comptime ParseRule.init(null, null, Precedence.NONE),
         //.SUPER => comptime ParseRule.init(Parser.super, null, Precedence.NONE),
         //.THIS => comptime ParseRule.init(Parser.this, null, Precedence.NONE),

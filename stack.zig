@@ -63,6 +63,13 @@ pub const Stack = struct {
     pub fn size(self: *Self) usize {
         return self.stack_top; // Return the current size of the stack
     }
+
+    pub fn toString(self: *Self) []const u8 {
+        var str = "";
+        for (self.values) |val| {
+            str = str + val;
+        }
+    }
 };
 
 pub fn growCapacity(capacity: usize) usize {
