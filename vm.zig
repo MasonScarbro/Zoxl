@@ -173,6 +173,10 @@ pub const Vm = struct {
                     const offset = self.read_twoBytes();
                     self.ip += offset;
                 },
+                .op_loop => {
+                    const offset = self.read_twoBytes();
+                    self.ip -= offset; //jump back the 16 bytes ('-' instead of '+')
+                },
                 .op_greater => self.binaryOp(instruction),
                 .op_less => self.binaryOp(instruction),
                 .op_not => {

@@ -200,6 +200,8 @@ pub const Parser = struct {
             self.ifStatement();
         } else if (self.match(TokenType.SWITCH)) {
             self.switchStatement();
+        } else if (self.match(TokenType.WHILE)) {
+            self.whileStatement();
         } else if (self.match(TokenType.LEFTBRACE)) {
             self.compiler.beginScope();
             self.block();
@@ -261,7 +263,7 @@ pub const Parser = struct {
                 }
                 if (caseType == TokenType.CASE) {
                     state = 1;
-                    std.debug.print("\nSTACK PRINTED: \n", .{});
+                    //std.debug.print("\nSTACK PRINTED: \n", .{});
                     //printStack(&self.vm.stack);
                     self.compiler.emitByte(OpCode.op_duplicate.toU8(), self.previous.line);
                     self.expr();
@@ -274,7 +276,7 @@ pub const Parser = struct {
                     self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
 
                     if (self.match(TokenType.NOBREAK)) {
-                        std.debug.print("NO BREAK ENCOUNTERED", .{});
+                        //std.debug.print("NO BREAK ENCOUNTERED", .{});
                         fallthroughAllowed = true;
                         if (!self.check(TokenType.LEFTBRACE)) {
                             self.consume(TokenType.SEMICOLON, "Expected ';' after 'nobreak'");
@@ -314,9 +316,20 @@ pub const Parser = struct {
         caseEnds.deinit();
     }
 
-    // pub fn noBreak(self: *Self) void {
+    pub fn whileStatement(self: *Self) void {
+        const loopStart = self.compiler.currentChunk().code.count;
+        self.consume(TokenType.LEFTPAREN, "Expected '(' after while");
+        self.expr();
+        self.consume(TokenType.RIGHTPAREN, "Expected ')' after while");
 
-    // }
+        const exitJump = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+        self.statement();
+        self.compiler.emitLoop(loopStart, self.previous.line);
+
+        self.compiler.patchJump(exitJump);
+        self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+    }
 
     pub fn ifStatement(self: *Self) void {
         self.consume(TokenType.LEFTPAREN, "Expected '(' after if");
@@ -715,5 +728,16 @@ pub const Compiler = struct {
 
         self.currentChunk().code.items[offset] = @as(u8, @truncate(jump >> 8)) & 0xff;
         self.currentChunk().code.items[offset + 1] = @as(u8, @truncate(jump)) & 0xff;
+    }
+
+    // jumps backwards by a given offset
+    pub fn emitLoop(self: *Self, loopStart: usize, line: usize) void {
+        self.emitByte(OpCode.op_loop.toU8(), line); // emit the instruction (jumps back)
+
+        const offset = self.currentChunk().code.count - loopStart + 2; //  The + 2 is to take into account the size of the OP_LOOP
+
+        // Patches the jump
+        self.emitByte(@as(u8, @truncate(offset >> 8)) & 0xff, line);
+        self.emitByte(@as(u8, @truncate(offset)) & 0xff, line);
     }
 };
