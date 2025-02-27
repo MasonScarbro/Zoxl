@@ -200,6 +200,8 @@ pub const Parser = struct {
             self.ifStatement();
         } else if (self.match(TokenType.SWITCH)) {
             self.switchStatement();
+        } else if (self.match(TokenType.FOR)) {
+            self.forStatement();
         } else if (self.match(TokenType.WHILE)) {
             self.whileStatement();
         } else if (self.match(TokenType.LEFTBRACE)) {
@@ -221,6 +223,63 @@ pub const Parser = struct {
         self.expr();
         self.consume(TokenType.SEMICOLON, "Expected ';' after value.");
         self.compiler.emitByte(OpCode.op_print.toU8(), self.previous.line);
+    }
+
+    pub fn forStatement(self: *Self) void {
+        self.compiler.beginScope(); // manually begin the scope to scope the variable only to the for body
+        self.consume(TokenType.LEFTPAREN, "Expected '(' after 'for'");
+        if (self.match(TokenType.SEMICOLON)) {
+            //No initializer
+        } else if (self.match(TokenType.VAR)) {
+            //defined in paren
+            self.varDeclaration();
+        } else {
+            //defined outside or other
+            self.exprStatement();
+        }
+
+        const loopStart = self.compiler.currentChunk().code.count;
+        var exitJump: ?usize = null;
+        //optional clause
+        if (!self.match(TokenType.SEMICOLON)) {
+            self.expr();
+            self.consume(TokenType.SEMICOLON, "Expect ';' after loop condition.");
+
+            //Jump out of loop when condition is false
+            exitJump = self.compiler.emitJump(OpCode.op_jump_if_false.toU8(), self.previous.line);
+            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line); // pop the condition
+        }
+
+        // we can’t compile the increment clause later,
+        // since our compiler only makes a single pass over the code.
+        // Instead, we’ll jump over the increment, run the body,
+        // jump back up to the increment, run it, and then go to the next iteration.
+        if (!self.match(TokenType.RIGHTPAREN)) {
+            const bodyJump = self.compiler.emitJump(OpCode.op_jump.toU8(), self.previous.line); // emit an unconditional jump that hops over the increment clause’s code to the body of the loop.
+            const incrementStart = self.compiler.currentChunk().code.count; // location of increment
+            self.expr(); // compile the increment expression itself.
+
+            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line); // discard the increment expr in vm
+            self.consume(TokenType.RIGHTPAREN, "Expected ')' after clauses");
+
+            // when we emit the loop instruction after the body statement,
+            // this will cause it to jump up to the increment expression instead of the top of the loop
+            // like it does when there is no increment.
+            self.compiler.emitLoop(loopStart, self.previous.line); // main loop to go to top of the for loop
+            loopStart = incrementStart; // loop start point at offset where the increment begins
+            self.compiler.patchJump(bodyJump); //
+        }
+
+        self.statement();
+        self.compiler.emitLoop(loopStart, self.previous.line);
+
+        // if the codition clause exist patch the jump (no jump to patch otherwise)
+        if (exitJump) {
+            self.compiler.patchJump(exitJump.?);
+            self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
+        }
+
+        self.compiler.endScope(self.previous.line);
     }
 
     pub fn switchStatement(self: *Self) void {
@@ -613,7 +672,7 @@ pub fn getRule(ttype: TokenType) ParseRule {
         //.CLASS => comptime ParseRule.init(null, null, Precedence.NONE),
         //.ELSE => comptime ParseRule.init(null, null, Precedence.NONE),
         .FALSE => comptime ParseRule.init(Parser.literal, null, Precedence.NONE),
-        //.FOR => comptime ParseRule.init(null, null, Precedence.NONE),
+        .FOR => comptime ParseRule.init(null, null, Precedence.NONE),
         //.FUN => comptime ParseRule.init(null, null, Precedence.NONE),
         .IF => comptime ParseRule.init(null, null, Precedence.NONE),
         .CASE => comptime ParseRule.init(null, null, Precedence.NONE),
