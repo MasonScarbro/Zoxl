@@ -238,7 +238,7 @@ pub const Parser = struct {
             self.exprStatement();
         }
 
-        const loopStart = self.compiler.currentChunk().code.count;
+        var loopStart = self.compiler.currentChunk().code.count;
         var exitJump: ?usize = null;
         //optional clause
         if (!self.match(TokenType.SEMICOLON)) {
@@ -274,7 +274,7 @@ pub const Parser = struct {
         self.compiler.emitLoop(loopStart, self.previous.line);
 
         // if the codition clause exist patch the jump (no jump to patch otherwise)
-        if (exitJump) {
+        if (exitJump != null) {
             self.compiler.patchJump(exitJump.?);
             self.compiler.emitByte(OpCode.op_pop.toU8(), self.previous.line);
         }
