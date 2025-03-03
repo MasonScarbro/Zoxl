@@ -18,6 +18,11 @@ const CompileError = error{
     ScannerErr,
 };
 
+const FuncType = enum {
+    SCRIPT, //Top level code
+    FUNCTION, // Function Body
+};
+
 const Precedence = enum {
     NONE,
     ASSIGNMENT, // =
@@ -53,10 +58,9 @@ const ParseRule = struct {
     }
 };
 
-pub fn compile(vm: *Vm, src: []const u8, chunk: *Chunk, allocator: Allocator) CompileError!void {
+pub fn compile(vm: *Vm, src: []const u8, allocator: Allocator) CompileError!*Object.FuncObj {
     var scanner = Scanner.init(src);
-    std.debug.print("Scanner Done", .{});
-    var compiler = Compiler.init(chunk, allocator);
+    var compiler = Compiler.init(vm, FuncType.SCRIPT, allocator);
     var parser = Parser.init(vm, &scanner, &compiler);
     parser.advance(); //Kick off parser
     if (parser.hadErr == true) return CompileError.ScannerErr;
@@ -64,7 +68,8 @@ pub fn compile(vm: *Vm, src: []const u8, chunk: *Chunk, allocator: Allocator) Co
         parser.declaration();
     }
     parser.consume(.EOF, "Expect end of expression");
-    compiler.endCompiler(parser.previous.line);
+    const func = compiler.endCompiler(parser.previous.line);
+    return if (parser.hadErr or compiler.hadErr) CompileError.CompileErr else func;
 }
 
 pub const Parser = struct {
@@ -701,15 +706,26 @@ pub const Compiler = struct {
     const Self = @This();
 
     compilingChunk: *Chunk = undefined,
+    function: *Object.FuncObj,
+    funcType: FuncType,
     allocator: Allocator,
     hadErr: bool = false,
     locals: std.ArrayList(Local),
     localCount: usize = 0,
     scopeDepth: usize = 0,
 
-    pub fn init(chunk: *Chunk, allocator: Allocator) Self {
+    pub fn init(vm: *Vm, ftype: FuncType, allocator: Allocator) Self {
         std.debug.print("\nIniting Compiler", .{});
-        return Self{ .compilingChunk = chunk, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator) };
+        var compiler = Self{ .function = Object.FuncObj.newFunc(vm), .funcType = ftype, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator) };
+
+        if (ftype == FuncType.SCRIPT) {
+            var local: Local = compiler.locals.items[compiler.localCount];
+            compiler.localCount += 1;
+            local.depth = 0;
+            local.name.lexeme = "";
+        }
+
+        return compiler;
     }
 
     pub fn addLocal(self: *Self, name: Token) void {
@@ -749,11 +765,17 @@ pub const Compiler = struct {
     }
 
     pub fn currentChunk(self: *Self) *Chunk {
-        return self.compilingChunk;
+        return &self.function.chunk;
     }
 
-    pub fn endCompiler(self: *Self, line: usize) void {
+    pub fn endCompiler(self: *Self, line: usize) *Object.FuncObj {
         self.emitReturn(line);
+        const func = self.function;
+        if (!self.hadErr) {
+            const name = if (func.name) |n| n.chars else "<script>";
+            _ = try disassembleChunk(self.currentChunk(), name);
+        }
+        return func;
     }
 
     pub fn emitReturn(self: *Self, line: usize) void {

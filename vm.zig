@@ -10,8 +10,10 @@ const printStack = @import("debugging.zig").printStack;
 const compile = @import("./compiler.zig").compile;
 const Object = @import("./object.zig");
 const DEBUG_TRACE_EXECUTION = false;
-const STACK_MAX = 256;
 const HashTable = @import("./hashTable.zig").HashTable;
+
+const STACK_MAX = 256;
+const FRAMES_MAX = 64;
 
 pub const InterpretErr = error{
     interpret_compile_error,
@@ -24,11 +26,18 @@ pub const InterpretResult = enum(u8) {
     interpret_ok,
 };
 
+// each time a function is called we create this:
+pub const CallFrame = struct {
+    func: *Object.FuncObj,
+    ip: usize, // ip of the call
+    slots: usize,
+};
+
 pub const Vm = struct {
     const Self = @This();
 
-    chunk: *Chunk,
-    ip: usize = 0,
+    frames: [FRAMES_MAX]CallFrame = undefined,
+    frameCount: usize = 0,
     stack: [STACK_MAX]Value = undefined,
     stack_top: usize = 0,
     objects: ?*Object.Object = null,
@@ -44,7 +53,7 @@ pub const Vm = struct {
     }
 
     pub fn init(allocator: Allocator) Self {
-        return Self{ .ip = 0, .chunk = undefined, .allocator = allocator, .strings = HashTable.init(allocator), .globals = HashTable.init(allocator) };
+        return Self{ .allocator = allocator, .strings = HashTable.init(allocator), .globals = HashTable.init(allocator) };
     }
 
     pub fn deinit(self: *Self) void {
@@ -64,22 +73,12 @@ pub const Vm = struct {
         }
     }
 
-    pub fn test_interpret(self: *Self, chunk: *Chunk) InterpretErr!void {
-        self.chunk = chunk;
-        self.ip = 0;
-        self.run();
-    }
-
     pub fn interpret(self: *Self, source: []const u8) InterpretErr!void {
         //self.chunk = chunk;
+        const function = compile(self, source, self.allocator) catch return InterpretErr.interpret_compile_error;
+        self.push(Value.ObjectValue(&function.obj));
 
-        var chunk = Chunk.init(&self.allocator);
-        defer chunk.deinit();
-
-        compile(self, source, &chunk, self.allocator) catch return InterpretErr.interpret_compile_error;
-
-        self.ip = 0;
-        self.chunk = &chunk;
+        _ = self.call(function, 0); // 'main' function everything is wrapped in
         return self.run();
     }
 
@@ -87,7 +86,7 @@ pub const Vm = struct {
         while (true) {
             if (comptime DEBUG_TRACE_EXECUTION) {
                 //printStack(&self.stack);
-                _ = disassembleInstruction(self.chunk, self.ip);
+                _ = disassembleInstruction(self.currentChunk(), self.currentFrame().ip);
             }
 
             const instruction = self.read_instruction();
@@ -153,12 +152,12 @@ pub const Vm = struct {
                 .op_set_local => {
                     std.debug.print("Inside VM op_set_local", .{});
                     const slot = self.read_instruction().toU8();
-                    self.stack[slot] = self.peek();
+                    self.stack[self.currentFrame().slots + slot] = self.peek();
                 },
                 .op_get_local => {
                     std.debug.print("Inside VM op_get_local", .{});
                     const slot = self.read_instruction().toU8();
-                    self.push(self.stack[slot]);
+                    self.push(self.stack[self.currentFrame().slots + slot]);
                 },
                 .op_equal => {
                     const b = self.pop();
@@ -167,15 +166,15 @@ pub const Vm = struct {
                 },
                 .op_jump_if_false => {
                     const offset = self.read_twoBytes();
-                    if (isFalsey(self.peek())) self.ip += offset;
+                    if (isFalsey(self.peek())) self.currentFrame().ip += offset;
                 },
                 .op_jump => {
                     const offset = self.read_twoBytes();
-                    self.ip += offset;
+                    self.currentFrame().ip += offset;
                 },
                 .op_loop => {
                     const offset = self.read_twoBytes();
-                    self.ip -= offset; //jump back the 16 bytes ('-' instead of '+')
+                    self.currentFrame().ip -= offset; //jump back the 16 bytes ('-' instead of '+')
                 },
                 .op_greater => self.binaryOp(instruction),
                 .op_less => self.binaryOp(instruction),
@@ -210,14 +209,36 @@ pub const Vm = struct {
         }
     }
 
+    inline fn currentFrame(self: *Self) *CallFrame {
+        return &self.frames[self.frameCount - 1];
+    }
+
+    inline fn currentChunk(self: *Self) *Chunk {
+        return &self.currentFrame().func.chunk;
+    }
+
+    inline fn call(self: *Self, func: *Object.FuncObj, argCount: u8) bool {
+        if (func.arity != argCount) {
+            _ = self.runtimeErrW("Expected {d} arguments but got {d}", .{ func.arity, argCount }) catch {};
+            return false;
+        }
+
+        var frame = &self.frames[self.frameCount];
+        self.frameCount += 1;
+        frame.func = func;
+        frame.ip = 0;
+        frame.slots = self.stack_top - argCount - 1;
+        return true;
+    }
+
     //just read_byte but with u8 -> opcode zig translation
     inline fn read_instruction(self: *Self) OpCode {
         return OpCode.fromU8(self.read_byte());
     }
 
     inline fn read_byte(self: *Self) u8 {
-        const byte = self.chunk.code.items[self.ip];
-        self.ip += 1;
+        const byte = self.currentChunk().code.items[self.currentFrame().ip];
+        self.currentFrame().ip += 1;
         return byte;
     }
 
@@ -229,7 +250,7 @@ pub const Vm = struct {
 
     inline fn read_constant(self: *Self) Value {
         const idx = self.read_byte();
-        return self.chunk.constants.items[idx];
+        return self.currentChunk().constants.items[idx];
     }
 
     inline fn reset_stack(self: *Self) void {
@@ -320,8 +341,8 @@ pub const Vm = struct {
 
         err_writer.print("{s}.\n", .{msg}) catch {};
 
-        const instruction = self.ip - 1;
-        const line = self.chunk.lines.items[instruction];
+        const instruction = self.currentFrame().ip - 1;
+        const line = self.currentChunk().lines.items[instruction];
 
         err_writer.print("[line {d}] in ", .{line}) catch {};
 
@@ -335,8 +356,8 @@ pub const Vm = struct {
 
         err_writer.print(msg ++ "\n", args) catch {};
 
-        const instruction = self.ip - 1;
-        const line = self.chunk.lines.items[instruction];
+        const instruction = self.currentFrame().ip - 1;
+        const line = self.currentChunk().lines.items[instruction];
 
         err_writer.print("[line {d}] in ", .{line}) catch {};
 

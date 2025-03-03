@@ -3,9 +3,11 @@ const Value = @import("./value.zig").Value;
 const memutils = @import("./utils.mem.zig");
 const Vm = @import("./vm.zig").Vm;
 const Allocator = std.mem.Allocator;
+const Chunk = @import("./chunk.zig").Chunk;
 
 pub const ObjectType = enum {
     STRING,
+    FUNCTION,
 };
 
 pub const Object = struct {
@@ -24,6 +26,7 @@ pub const Object = struct {
         //std.debug.print("Inside freeObject\n", .{});
         switch (self.objType) {
             .STRING => self.asString().free(vm),
+            .FUNCTION => self.asFunction().free(vm),
         }
     }
 
@@ -31,8 +34,19 @@ pub const Object = struct {
         return @fieldParentPtr("obj", self);
     }
 
+    pub inline fn asFunction(self: *Object) *FuncObj {
+        return @fieldParentPtr("obj", self);
+    }
+
     pub inline fn isA(value: Value, objType: ObjectType) bool {
         return value == .obj and value.obj.objType == objType;
+    }
+
+    pub inline fn printObj(self: *Object) void {
+        switch (self.objType) {
+            .STRING => self.asString().printSelf(),
+            .FUNCTION => self.asFunction().printSelf(),
+        }
     }
 };
 
@@ -58,6 +72,10 @@ pub const StringObj = struct {
         //std.debug.print("Trying to destroy self\n", .{});
         vm.allocator.destroy(self);
         //std.debug.print("Destroyed self succesfully\n", .{});
+    }
+
+    pub fn printSelf(self: *StringObj) void {
+        std.debug.print("%s", .{self.chars});
     }
 
     pub fn copyStr(vm: *Vm, chars: []const u8) *StringObj {
@@ -89,6 +107,34 @@ pub const StringObj = struct {
             return interneded;
         }
         return allocateStr(vm, chars, hash);
+    }
+};
+
+pub const FuncObj = struct {
+    obj: Object,
+    arity: usize,
+    chunk: Chunk,
+    name: ?*StringObj,
+
+    pub fn newFunc(vm: *Vm) *FuncObj {
+        var func = Object.create(vm, FuncObj, .FUNCTION);
+        func.arity = 0;
+        func.name = null;
+        func.chunk = Chunk.init(&vm.allocator);
+        return func;
+    }
+
+    pub fn free(self: *FuncObj, vm: *Vm) void {
+        self.chunk.deinit();
+        vm.allocator.destroy(self);
+    }
+
+    pub fn printSelf(self: *FuncObj) void {
+        if (self.name.?.chars.len == 0) {
+            std.debug.print("<script>", .{});
+            return;
+        }
+        std.debug.print("<fn %s>", .{self.name.?.chars});
     }
 };
 
