@@ -117,7 +117,8 @@ pub const FuncObj = struct {
     name: ?*StringObj,
 
     pub fn newFunc(vm: *Vm) *FuncObj {
-        var func = Object.create(vm, FuncObj, .FUNCTION);
+        std.debug.print("\nMaking object\n", .{});
+        var func: *FuncObj = Object.create(vm, FuncObj, .FUNCTION);
         func.arity = 0;
         func.name = null;
         func.chunk = Chunk.init(&vm.allocator);

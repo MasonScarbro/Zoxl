@@ -715,14 +715,15 @@ pub const Compiler = struct {
     scopeDepth: usize = 0,
 
     pub fn init(vm: *Vm, ftype: FuncType, allocator: Allocator) Self {
-        std.debug.print("\nIniting Compiler", .{});
+        std.debug.print("\nIniting Compiler\n", .{});
         var compiler = Self{ .function = Object.FuncObj.newFunc(vm), .funcType = ftype, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator) };
-
-        if (ftype == FuncType.SCRIPT) {
-            var local: Local = compiler.locals.items[compiler.localCount];
+        std.debug.print("\nCreated compiler\n", .{});
+        const local = Local{ .depth = 0, .name = .{ .lexeme = "", .line = 0, .token_type = TokenType.IDENTIFIER } };
+        if (compiler.locals.append(local)) |*_| {
             compiler.localCount += 1;
-            local.depth = 0;
-            local.name.lexeme = "";
+        } else |_| {
+            std.debug.print("\nERR: Failed appending newLocal????", .{});
+            compiler.hadErr = true;
         }
 
         return compiler;
