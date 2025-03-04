@@ -158,6 +158,7 @@ pub const Parser = struct {
         var i: usize = self.compiler.localCount;
         while (i > 0) {
             i -= 1;
+            std.debug.print("\nlocal count: {}\n", .{self.compiler.localCount});
             const local = self.compiler.locals.items[@as(usize, @intCast(i))];
             if (self.identifiersEqual(name, local.name)) {
                 if (local.depth == null) {
@@ -190,9 +191,13 @@ pub const Parser = struct {
     }
 
     pub fn function(self: *Self, ftype: FuncType) void {
+        std.debug.print("\nInside function (compile\n)", .{});
         var functionCompiler = Compiler.init(self.vm, ftype, self.compiler, self.compiler.allocator);
-        functionCompiler.function.name = Object.StringObj.copyStr(self.vm, self.previous.lexeme);
+
         self.compiler = &functionCompiler;
+
+        functionCompiler.function.name = Object.StringObj.copyStr(self.vm, self.previous.lexeme);
+
         self.compiler.beginScope();
 
         self.consume(TokenType.LEFTPAREN, "Expected '(' after function name");
@@ -217,6 +222,9 @@ pub const Parser = struct {
         self.block();
 
         var func = functionCompiler.endCompiler(self.previous.line);
+        if (self.compiler.enclosing) |enclosing| {
+            self.compiler = enclosing;
+        }
         self.compiler.emitBytes(OpCode.op_constant.toU8(), self.makeConstant(Value.ObjectValue(&func.obj)), self.previous.line);
     }
 
@@ -240,6 +248,8 @@ pub const Parser = struct {
             self.switchStatement();
         } else if (self.match(TokenType.FOR)) {
             self.forStatement();
+        } else if (self.match(TokenType.RETURN)) {
+            self.returnStatement();
         } else if (self.match(TokenType.WHILE)) {
             self.whileStatement();
         } else if (self.match(TokenType.LEFTBRACE)) {
@@ -248,6 +258,19 @@ pub const Parser = struct {
             self.compiler.endScope(self.previous.line);
         } else {
             self.exprStatement();
+        }
+    }
+
+    pub fn returnStatement(self: *Self) void {
+        if (self.compiler.funcType == FuncType.SCRIPT) {
+            self.err("Can't return from top-level code.");
+        }
+        if (self.match(TokenType.SEMICOLON)) {
+            self.compiler.emitReturn(self.previous.line);
+        } else {
+            self.expr();
+            self.consume(TokenType.SEMICOLON, "Expected ';' after return value.");
+            self.compiler.emitByte(OpCode.op_return.toU8(), self.previous.line);
         }
     }
 
@@ -466,6 +489,7 @@ pub const Parser = struct {
 
     pub fn funDeclaration(self: *Self) void {
         const global = self.parseVariable("Expected function name");
+        std.debug.print("\ninside fun declaration\n", .{});
         self.markInitialized();
         self.function(FuncType.FUNCTION);
         self.defineVar(global);
@@ -475,6 +499,7 @@ pub const Parser = struct {
         self.consume(TokenType.IDENTIFIER, errmsg);
         //std.debug.print("\nInside parseVariable\n", .{});
         self.declareVar();
+
         if (self.compiler.scopeDepth > 0) return 0;
 
         return self.identifierConst(self.previous);
@@ -528,10 +553,11 @@ pub const Parser = struct {
         if (!self.check(TokenType.RIGHTPAREN)) {
             while (true) {
                 self.expr();
-                argCount += 1;
+
                 if (argCount > 255) {
                     self.err("Can't have more than 255 arguments.");
                 }
+                argCount += 1;
                 if (!self.match(TokenType.COMMA)) break;
             }
         }
@@ -620,6 +646,7 @@ pub const Parser = struct {
     }
 
     pub fn call(self: *Self, canAssign: bool) void {
+        std.debug.print("\nInside Call\n", .{});
         _ = canAssign;
         const argCount = self.argumentList();
         self.compiler.emitBytes(OpCode.op_call.toU8(), argCount, self.previous.line);
@@ -782,12 +809,15 @@ pub const Compiler = struct {
         std.debug.print("\nIniting Compiler\n", .{});
         var compiler = Self{ .function = Object.FuncObj.newFunc(vm), .funcType = ftype, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator), .enclosing = enclosing };
         std.debug.print("\nCreated compiler\n", .{});
-        const local = Local{ .depth = 0, .name = .{ .lexeme = "", .line = 0, .token_type = TokenType.IDENTIFIER } };
-        if (compiler.locals.append(local)) |*_| {
-            compiler.localCount += 1;
-        } else |_| {
-            std.debug.print("\nERR: Failed appending newLocal????", .{});
-            compiler.hadErr = true;
+        if (ftype == FuncType.SCRIPT) {
+            std.debug.print("Was a script Making top level code func", .{});
+            const local = Local{ .depth = 0, .name = .{ .lexeme = "", .line = 0, .token_type = TokenType.IDENTIFIER } };
+            if (compiler.locals.append(local)) |*_| {
+                compiler.localCount += 1;
+            } else |_| {
+                std.debug.print("\nERR: Failed appending newLocal????", .{});
+                compiler.hadErr = true;
+            }
         }
 
         return compiler;
@@ -840,6 +870,7 @@ pub const Compiler = struct {
             const name = if (func.name) |n| n.chars else "<script>";
             _ = try disassembleChunk(self.currentChunk(), name);
         }
+
         return func;
     }
 
