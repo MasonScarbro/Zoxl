@@ -60,7 +60,7 @@ const ParseRule = struct {
 
 pub fn compile(vm: *Vm, src: []const u8, allocator: Allocator) CompileError!*Object.FuncObj {
     var scanner = Scanner.init(src);
-    var compiler = Compiler.init(vm, FuncType.SCRIPT, allocator);
+    var compiler = Compiler.init(vm, FuncType.SCRIPT, null, allocator);
     var parser = Parser.init(vm, &scanner, &compiler);
     parser.advance(); //Kick off parser
     if (parser.hadErr == true) return CompileError.ScannerErr;
@@ -189,8 +189,41 @@ pub const Parser = struct {
         self.consume(TokenType.RIGHTBRACE, "Expected '}' after block");
     }
 
+    pub fn function(self: *Self, ftype: FuncType) void {
+        var functionCompiler = Compiler.init(self.vm, ftype, self.compiler, self.compiler.allocator);
+        functionCompiler.function.name = Object.StringObj.copyStr(self.vm, self.previous.lexeme);
+        self.compiler = &functionCompiler;
+        self.compiler.beginScope();
+
+        self.consume(TokenType.LEFTPAREN, "Expected '(' after function name");
+
+        if (!self.check(TokenType.RIGHTPAREN)) {
+            while (true) {
+                self.compiler.function.arity += 1;
+                if (functionCompiler.function.arity > 255) {
+                    self.err("Can't have more than 255 parameters.");
+                    return;
+                }
+
+                const paramConst = self.parseVariable("Expected parameter name.");
+                self.defineVar(paramConst);
+
+                if (!self.match(TokenType.COMMA)) break;
+            }
+        }
+        self.consume(TokenType.RIGHTPAREN, "Expected ')' after parameters");
+        self.consume(TokenType.LEFTBRACE, "Expected '{' after block");
+
+        self.block();
+
+        var func = functionCompiler.endCompiler(self.previous.line);
+        self.compiler.emitBytes(OpCode.op_constant.toU8(), self.makeConstant(Value.ObjectValue(&func.obj)), self.previous.line);
+    }
+
     pub fn declaration(self: *Self) void {
-        if (self.match(TokenType.VAR)) {
+        if (self.match(TokenType.FUN)) {
+            self.funDeclaration();
+        } else if (self.match(TokenType.VAR)) {
             self.varDeclaration();
         } else {
             self.statement();
@@ -431,6 +464,13 @@ pub const Parser = struct {
         self.defineVar(global);
     }
 
+    pub fn funDeclaration(self: *Self) void {
+        const global = self.parseVariable("Expected function name");
+        self.markInitialized();
+        self.function(FuncType.FUNCTION);
+        self.defineVar(global);
+    }
+
     inline fn parseVariable(self: *Self, errmsg: []const u8) u8 {
         self.consume(TokenType.IDENTIFIER, errmsg);
         //std.debug.print("\nInside parseVariable\n", .{});
@@ -484,6 +524,7 @@ pub const Parser = struct {
     }
 
     inline fn markInitialized(self: *Self) void {
+        if (self.compiler.scopeDepth == 0) return;
         self.compiler.locals.items[self.compiler.localCount - 1].depth = self.compiler.scopeDepth;
     }
 
@@ -706,6 +747,7 @@ pub const Compiler = struct {
     const Self = @This();
 
     compilingChunk: *Chunk = undefined,
+    enclosing: ?*Compiler = null,
     function: *Object.FuncObj,
     funcType: FuncType,
     allocator: Allocator,
@@ -714,9 +756,9 @@ pub const Compiler = struct {
     localCount: usize = 0,
     scopeDepth: usize = 0,
 
-    pub fn init(vm: *Vm, ftype: FuncType, allocator: Allocator) Self {
+    pub fn init(vm: *Vm, ftype: FuncType, enclosing: ?*Compiler, allocator: Allocator) Self {
         std.debug.print("\nIniting Compiler\n", .{});
-        var compiler = Self{ .function = Object.FuncObj.newFunc(vm), .funcType = ftype, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator) };
+        var compiler = Self{ .function = Object.FuncObj.newFunc(vm), .funcType = ftype, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator), .enclosing = enclosing };
         std.debug.print("\nCreated compiler\n", .{});
         const local = Local{ .depth = 0, .name = .{ .lexeme = "", .line = 0, .token_type = TokenType.IDENTIFIER } };
         if (compiler.locals.append(local)) |*_| {
