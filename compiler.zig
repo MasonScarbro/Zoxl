@@ -523,6 +523,22 @@ pub const Parser = struct {
         self.compiler.emitBytes(OpCode.op_define_global.toU8(), global, self.previous.line);
     }
 
+    inline fn argumentList(self: *Self) u8 {
+        var argCount: usize = 0;
+        if (!self.check(TokenType.RIGHTPAREN)) {
+            while (true) {
+                self.expr();
+                argCount += 1;
+                if (argCount > 255) {
+                    self.err("Can't have more than 255 arguments.");
+                }
+                if (!self.match(TokenType.COMMA)) break;
+            }
+        }
+        self.consume(TokenType.RIGHTPAREN, "Expected ')' after arguments.");
+        return @as(u8, @intCast(argCount));
+    }
+
     inline fn markInitialized(self: *Self) void {
         if (self.compiler.scopeDepth == 0) return;
         self.compiler.locals.items[self.compiler.localCount - 1].depth = self.compiler.scopeDepth;
@@ -601,6 +617,12 @@ pub const Parser = struct {
             .LESSEQUAL => self.compiler.emitBytes(OpCode.op_greater.toU8(), OpCode.op_not.toU8(), self.previous.line),
             else => unreachable,
         }
+    }
+
+    pub fn call(self: *Self, canAssign: bool) void {
+        _ = canAssign;
+        const argCount = self.argumentList();
+        self.compiler.emitBytes(OpCode.op_call.toU8(), argCount, self.previous.line);
     }
 
     pub fn parsePrecedence(self: *Self, precedence: Precedence) void {
@@ -691,7 +713,7 @@ pub fn getRule(ttype: TokenType) ParseRule {
         std.debug.print("{}\n", .{ttype});
     }
     const rule = switch (ttype) {
-        .LEFTPAREN => comptime ParseRule.init(Parser.grouping, null, Precedence.NONE),
+        .LEFTPAREN => comptime ParseRule.init(Parser.grouping, Parser.call, Precedence.CALL),
         .RIGHTPAREN => comptime ParseRule.init(null, null, Precedence.NONE),
         .LEFTBRACE => comptime ParseRule.init(null, null, Precedence.NONE),
         .RIGHTBRACE => comptime ParseRule.init(null, null, Precedence.NONE),
@@ -822,6 +844,7 @@ pub const Compiler = struct {
     }
 
     pub fn emitReturn(self: *Self, line: usize) void {
+        self.emitByte(OpCode.op_nil.toU8(), line);
         self.emitByte(OpCode.op_return.toU8(), line);
         if (!self.hadErr) {
             _ = try disassembleChunk(self.currentChunk(), "code");

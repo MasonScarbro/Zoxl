@@ -92,8 +92,16 @@ pub const Vm = struct {
             const instruction = self.read_instruction();
             try switch (instruction) {
                 .op_return => {
-                    std.debug.print("RETURNED \n", .{});
-                    return;
+                    const result = self.pop();
+                    self.frameCount -= 1;
+                    if (self.frameCount == 0) {
+                        _ = self.pop();
+                        return;
+                    }
+                    std.debug.print("stack_top: {}\nslots: {}\n", .{ self.stack_top, self.currentFrame().slots });
+
+                    self.stack_top -= self.currentFrame().slots;
+                    self.push(result);
                 },
                 .op_print => {
                     printValue(self.pop());
@@ -176,6 +184,12 @@ pub const Vm = struct {
                     const offset = self.read_twoBytes();
                     self.currentFrame().ip -= offset; //jump back the 16 bytes ('-' instead of '+')
                 },
+                .op_call => {
+                    const argCount = self.read_byte();
+                    if (!self.callValue(self.peekBack(argCount), argCount)) {
+                        return InterpretErr.interpret_runtime_error;
+                    }
+                },
                 .op_greater => self.binaryOp(instruction),
                 .op_less => self.binaryOp(instruction),
                 .op_not => {
@@ -227,7 +241,7 @@ pub const Vm = struct {
         self.frameCount += 1;
         frame.func = func;
         frame.ip = 0;
-        frame.slots = self.stack_top - argCount - 1;
+        frame.slots = self.stack_top - argCount - 1; // - 1 is to account for stack slot zero which the compiler set aside
         return true;
     }
 
@@ -310,6 +324,20 @@ pub const Vm = struct {
         }
     }
 
+    pub inline fn callValue(self: *Self, callee: Value, argc: u8) bool {
+        switch (callee) {
+            .obj => {
+                return self.call(callee.obj.asFunction(), argc);
+            },
+            else => {
+                _ = self.runtimeErr("Can only call functions and classes") catch {};
+                return false;
+            },
+        }
+        _ = self.runtimeErr("Can only call functions and classes") catch {};
+        return false;
+    }
+
     pub inline fn concate(self: *Self) void {
         std.debug.print("INSIDE CONCATE\n", .{});
         const b = self.peek().obj.asString();
@@ -341,10 +369,18 @@ pub const Vm = struct {
 
         err_writer.print("{s}.\n", .{msg}) catch {};
 
-        const instruction = self.currentFrame().ip - 1;
-        const line = self.currentChunk().lines.items[instruction];
+        var i = self.frameCount;
+        while (i > 0) {
+            i -= 1;
 
-        err_writer.print("[line {d}] in ", .{line}) catch {};
+            const frame = &self.frames[i];
+            const function = frame.func;
+            const instruction = frame.ip - 1;
+
+            err_writer.print("[line {d}] in ", .{function.chunk.lines.items[instruction]}) catch {};
+            const name = if (function.name) |name| name.chars else "script";
+            err_writer.print("{s}\n", .{name}) catch {};
+        }
 
         self.reset_stack();
         return InterpretErr.interpret_runtime_error;
@@ -356,10 +392,18 @@ pub const Vm = struct {
 
         err_writer.print(msg ++ "\n", args) catch {};
 
-        const instruction = self.currentFrame().ip - 1;
-        const line = self.currentChunk().lines.items[instruction];
+        var i = self.frameCount;
+        while (i > 0) {
+            i -= 1;
 
-        err_writer.print("[line {d}] in ", .{line}) catch {};
+            const frame = &self.frames[i];
+            const function = frame.func;
+            const instruction = frame.ip - 1;
+
+            err_writer.print("[line {d}] in ", .{function.chunk.lines.items[instruction]}) catch {};
+            const name = if (function.name) |name| name.chars else "script";
+            err_writer.print("{s}\n", .{name}) catch {};
+        }
 
         self.reset_stack();
         return InterpretErr.interpret_runtime_error;
