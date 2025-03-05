@@ -40,6 +40,7 @@ pub const Value = union(ValueType) {
         switch (self.obj.objType) {
             .STRING => return objType == .STRING,
             .FUNCTION => return objType == .FUNCTION,
+            .NATIVE_FUNC => return objType == .NATIVE_FUNC,
             //else => return false,
         }
     }
@@ -74,6 +75,7 @@ pub fn printValue(value: Value) void {
                     const name = if (objVal.asFunction().name) |name| name.chars else "script";
                     std.debug.print("<fn {s}>\n", .{name});
                 },
+                .NATIVE_FUNC => std.debug.print("<native fn>\n", .{}),
                 //else => unreachable,
             }
         },

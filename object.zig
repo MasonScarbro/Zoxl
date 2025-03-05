@@ -8,6 +8,7 @@ const Chunk = @import("./chunk.zig").Chunk;
 pub const ObjectType = enum {
     STRING,
     FUNCTION,
+    NATIVE_FUNC,
 };
 
 pub const Object = struct {
@@ -27,6 +28,7 @@ pub const Object = struct {
         switch (self.objType) {
             .STRING => self.asString().free(vm),
             .FUNCTION => self.asFunction().free(vm),
+            .NATIVE_FUNC => self.asNativeFunc().free(vm),
         }
     }
 
@@ -38,6 +40,10 @@ pub const Object = struct {
         return @fieldParentPtr("obj", self);
     }
 
+    pub inline fn asNativeFunc(self: *Object) *NativeFunc {
+        return @fieldParentPtr("obj", self);
+    }
+
     pub inline fn isA(value: Value, objType: ObjectType) bool {
         return value == .obj and value.obj.objType == objType;
     }
@@ -46,6 +52,7 @@ pub const Object = struct {
         switch (self.objType) {
             .STRING => self.asString().printSelf(),
             .FUNCTION => self.asFunction().printSelf(),
+            .NATIVE_FUNC => self.asNativeFunc().printSelf(),
         }
     }
 };
@@ -136,6 +143,28 @@ pub const FuncObj = struct {
             return;
         }
         std.debug.print("<fn %s>", .{self.name.?.chars});
+    }
+};
+
+pub const NativeFunc = struct {
+    pub const Fn = *const fn (vm: *Vm, argCount: usize, args: Value) Value;
+
+    obj: Object,
+    function: Fn,
+
+    pub fn newNativeFunc(vm: *Vm, function: Fn) *NativeFunc {
+        var nativeFunc: *NativeFunc = Object.create(vm, NativeFunc, .NATIVE_FUNC);
+        nativeFunc.function = function;
+        return nativeFunc;
+    }
+
+    pub fn free(self: *NativeFunc, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+
+    pub fn printSelf(self: *NativeFunc) void {
+        _ = self;
+        std.debug.print("<native fn>", .{});
     }
 };
 

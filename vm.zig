@@ -11,6 +11,7 @@ const compile = @import("./compiler.zig").compile;
 const Object = @import("./object.zig");
 const DEBUG_TRACE_EXECUTION = false;
 const HashTable = @import("./hashTable.zig").HashTable;
+const nativeFuncs = @import("./nativeFuncs.zig");
 
 const STACK_MAX = 256;
 const FRAMES_MAX = 64;
@@ -53,7 +54,9 @@ pub const Vm = struct {
     }
 
     pub fn init(allocator: Allocator) Self {
-        return Self{ .allocator = allocator, .strings = HashTable.init(allocator), .globals = HashTable.init(allocator) };
+        var vm = Self{ .allocator = allocator, .strings = HashTable.init(allocator), .globals = HashTable.init(allocator) };
+        vm.defineNative("clock", nativeFuncs.clockNative);
+        return vm;
     }
 
     pub fn deinit(self: *Self) void {
@@ -327,7 +330,18 @@ pub const Vm = struct {
     pub inline fn callValue(self: *Self, callee: Value, argc: u8) bool {
         switch (callee) {
             .obj => {
-                return self.call(callee.obj.asFunction(), argc);
+                if (callee.obj.objType == .FUNCTION) {
+                    return self.call(callee.obj.asFunction(), argc);
+                } else if (callee.obj.objType == .NATIVE_FUNC) {
+                    const args = self.stack[self.stack_top - argc - 1]; // retrieves the arguments from the stack
+                    const result = callee.obj.asNativeFunc().function(self, argc, args); // call the zig function
+                    self.stack_top -= argc + 1; //Stack Cleanup:  removes: All the arguments (argc), The function object itself (+ 1)
+                    self.push(result);
+                    return true;
+                } else {
+                    _ = self.runtimeErr("Can only call functions and classes") catch {};
+                    return false;
+                }
             },
             else => {
                 _ = self.runtimeErr("Can only call functions and classes") catch {};
@@ -387,7 +401,7 @@ pub const Vm = struct {
     }
 
     // probably just meld this to one func
-    inline fn runtimeErrW(self: *Self, msg: []const u8, args: anytype) InterpretErr {
+    pub inline fn runtimeErrW(self: *Self, msg: []const u8, args: anytype) InterpretErr {
         const err_writer = std.io.getStdErr().writer();
 
         err_writer.print(msg ++ "\n", args) catch {};
@@ -407,6 +421,14 @@ pub const Vm = struct {
 
         self.reset_stack();
         return InterpretErr.interpret_runtime_error;
+    }
+
+    pub fn defineNative(self: *Self, name: []const u8, function: Object.NativeFunc.Fn) void {
+        self.push(Value.ObjectValue(&Object.StringObj.copyStr(self, name).obj));
+        self.push(Value.ObjectValue(&Object.NativeFunc.newNativeFunc(self, function).obj));
+        _ = self.globals.set(self.stack[0].obj.asString(), self.stack[1]);
+        _ = self.pop();
+        _ = self.pop();
     }
 
     pub fn isFalsey(value: Value) bool {
