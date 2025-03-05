@@ -209,7 +209,7 @@ pub const Parser = struct {
                     self.err("Can't have more than 255 parameters.");
                     return;
                 }
-
+                std.debug.print("\nPARSING ARGUUMENT\n", .{});
                 const paramConst = self.parseVariable("Expected parameter name.");
                 self.defineVar(paramConst);
 
@@ -220,7 +220,7 @@ pub const Parser = struct {
         self.consume(TokenType.LEFTBRACE, "Expected '{' after block");
 
         self.block();
-
+        self.compiler.endScope(self.previous.line);
         var func = functionCompiler.endCompiler(self.previous.line);
         if (self.compiler.enclosing) |enclosing| {
             self.compiler = enclosing;
@@ -649,6 +649,7 @@ pub const Parser = struct {
         std.debug.print("\nInside Call\n", .{});
         _ = canAssign;
         const argCount = self.argumentList();
+        std.debug.print("\nArgumentCount = {}\n", .{argCount});
         self.compiler.emitBytes(OpCode.op_call.toU8(), argCount, self.previous.line);
     }
 

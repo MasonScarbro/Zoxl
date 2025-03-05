@@ -30,8 +30,8 @@ pub const InterpretResult = enum(u8) {
 // each time a function is called we create this:
 pub const CallFrame = struct {
     func: *Object.FuncObj,
-    ip: usize, // ip of the call
-    slots: usize,
+    ip: usize = 0, // ip of the call
+    slots: usize = 0,
 };
 
 pub const Vm = struct {
@@ -96,6 +96,7 @@ pub const Vm = struct {
             try switch (instruction) {
                 .op_return => {
                     const result = self.pop();
+                    const frame = self.currentFrame();
                     self.frameCount -= 1;
                     if (self.frameCount == 0) {
                         _ = self.pop();
@@ -103,10 +104,12 @@ pub const Vm = struct {
                     }
                     std.debug.print("stack_top: {}\nslots: {}\n", .{ self.stack_top, self.currentFrame().slots });
 
-                    self.stack_top -= self.currentFrame().slots;
+                    self.stack_top = frame.slots;
                     self.push(result);
                 },
                 .op_print => {
+                    std.debug.print("\nPrinting Value:\t", .{});
+
                     printValue(self.pop());
                     std.debug.print("\n", .{});
                 },
@@ -168,7 +171,7 @@ pub const Vm = struct {
                 .op_get_local => {
                     std.debug.print("Inside VM op_get_local", .{});
                     const slot = self.read_instruction().toU8();
-                    self.push(self.stack[self.currentFrame().slots + slot]);
+                    self.push(self.stack[self.currentFrame().slots + slot + 1]);
                 },
                 .op_equal => {
                     const b = self.pop();
@@ -235,6 +238,7 @@ pub const Vm = struct {
     }
 
     inline fn call(self: *Self, func: *Object.FuncObj, argCount: u8) bool {
+        std.debug.print("INSIDE CALL", .{});
         if (func.arity != argCount) {
             _ = self.runtimeErrW("Expected {d} arguments but got {d}", .{ func.arity, argCount }) catch {};
             return false;
@@ -242,6 +246,7 @@ pub const Vm = struct {
 
         var frame = &self.frames[self.frameCount];
         self.frameCount += 1;
+
         frame.func = func;
         frame.ip = 0;
         frame.slots = self.stack_top - argCount - 1; // - 1 is to account for stack slot zero which the compiler set aside
@@ -305,12 +310,12 @@ pub const Vm = struct {
             return self.runtimeErr("Operands Must Be Numbers");
         }
         //else
-        const b = self.pop().number;
+        const b = self.pop().asNumber();
         std.debug.print("b is: {d}\n", .{b});
-
-        const a = self.pop().number;
+        const a = self.pop().asNumber();
         std.debug.print("a is: {d}\n", .{a});
         std.debug.print("op is: {}\n", .{op});
+
         switch (op) {
             .op_add => {
                 self.push(Value.NumberValue(a + b));
@@ -328,19 +333,22 @@ pub const Vm = struct {
     }
 
     pub inline fn callValue(self: *Self, callee: Value, argc: u8) bool {
+        std.debug.print("CALLING values with args ", .{});
         switch (callee) {
-            .obj => {
-                if (callee.obj.objType == .FUNCTION) {
-                    return self.call(callee.obj.asFunction(), argc);
-                } else if (callee.obj.objType == .NATIVE_FUNC) {
-                    const args = self.stack[self.stack_top - argc - 1]; // retrieves the arguments from the stack
-                    const result = callee.obj.asNativeFunc().function(self, argc, args); // call the zig function
-                    self.stack_top -= argc + 1; //Stack Cleanup:  removes: All the arguments (argc), The function object itself (+ 1)
-                    self.push(result);
-                    return true;
-                } else {
-                    _ = self.runtimeErr("Can only call functions and classes") catch {};
-                    return false;
+            .obj => |obj| {
+                switch (obj.objType) {
+                    .FUNCTION => return self.call(obj.asFunction(), argc),
+                    .NATIVE_FUNC => {
+                        const args = self.stack[self.stack_top - argc - 1]; // retrieves the arguments from the stack
+                        const result = callee.obj.asNativeFunc().function(self, argc, args); // call the zig function
+                        self.stack_top -= argc + 1; //Stack Cleanup:  removes: All the arguments (argc), The function object itself (+ 1)
+                        self.push(result);
+                        return true;
+                    },
+                    else => {
+                        _ = self.runtimeErr("Can only call functions and classes") catch {};
+                        return false;
+                    },
                 }
             },
             else => {

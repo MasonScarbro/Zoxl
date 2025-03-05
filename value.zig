@@ -34,6 +34,10 @@ pub const Value = union(ValueType) {
         return @as(ValueType, self) == ValueType.obj;
     }
 
+    pub inline fn asNumber(self: Self) f64 {
+        return self.number;
+    }
+
     pub inline fn isObjType(self: Self, objType: ObjectType) bool {
         if (!self.isObj()) return false;
 
