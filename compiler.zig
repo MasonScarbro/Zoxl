@@ -225,7 +225,7 @@ pub const Parser = struct {
         if (self.compiler.enclosing) |enclosing| {
             self.compiler = enclosing;
         }
-        self.compiler.emitBytes(OpCode.op_constant.toU8(), self.makeConstant(Value.ObjectValue(&func.obj)), self.previous.line);
+        self.compiler.emitBytes(OpCode.op_closure.toU8(), self.makeConstant(Value.ObjectValue(&func.obj)), self.previous.line);
     }
 
     pub fn declaration(self: *Self) void {

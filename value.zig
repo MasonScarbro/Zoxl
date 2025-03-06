@@ -45,6 +45,7 @@ pub const Value = union(ValueType) {
             .STRING => return objType == .STRING,
             .FUNCTION => return objType == .FUNCTION,
             .NATIVE_FUNC => return objType == .NATIVE_FUNC,
+            .CLOSURE => return objType == .CLOSURE,
             //else => return false,
         }
     }
@@ -79,7 +80,8 @@ pub fn printValue(value: Value) void {
                     const name = if (objVal.asFunction().name) |name| name.chars else "script";
                     std.debug.print("<fn {s}>\n", .{name});
                 },
-                .NATIVE_FUNC => std.debug.print("<native fn>\n", .{}),
+                .NATIVE_FUNC => objVal.printObj(),
+                .CLOSURE => objVal.printObj(),
                 //else => unreachable,
             }
         },

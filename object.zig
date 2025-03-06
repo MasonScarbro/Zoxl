@@ -9,6 +9,7 @@ pub const ObjectType = enum {
     STRING,
     FUNCTION,
     NATIVE_FUNC,
+    CLOSURE,
 };
 
 pub const Object = struct {
@@ -29,6 +30,7 @@ pub const Object = struct {
             .STRING => self.asString().free(vm),
             .FUNCTION => self.asFunction().free(vm),
             .NATIVE_FUNC => self.asNativeFunc().free(vm),
+            .CLOSURE => self.asClosure().free(vm),
         }
     }
 
@@ -44,6 +46,10 @@ pub const Object = struct {
         return @fieldParentPtr("obj", self);
     }
 
+    pub inline fn asClosure(self: *Object) *ClosureObj {
+        return @fieldParentPtr("obj", self);
+    }
+
     pub inline fn isA(value: Value, objType: ObjectType) bool {
         return value == .obj and value.obj.objType == objType;
     }
@@ -53,6 +59,7 @@ pub const Object = struct {
             .STRING => self.asString().printSelf(),
             .FUNCTION => self.asFunction().printSelf(),
             .NATIVE_FUNC => self.asNativeFunc().printSelf(),
+            .CLOSURE => self.asClosure().printSelf(),
         }
     }
 };
@@ -114,6 +121,25 @@ pub const StringObj = struct {
             return interneded;
         }
         return allocateStr(vm, chars, hash);
+    }
+};
+
+pub const ClosureObj = struct {
+    obj: Object,
+    func: *FuncObj,
+
+    pub fn newClosure(vm: *Vm, func: *FuncObj) *ClosureObj {
+        var closure: *ClosureObj = Object.create(vm, ClosureObj, .CLOSURE);
+        closure.func = func;
+        return closure;
+    }
+
+    pub fn free(self: *ClosureObj, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+
+    pub fn printSelf(self: *ClosureObj) void {
+        std.debug.print("<closure {s}>", .{self.func.name.?.chars});
     }
 };
 

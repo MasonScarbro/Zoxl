@@ -29,7 +29,7 @@ pub const InterpretResult = enum(u8) {
 
 // each time a function is called we create this:
 pub const CallFrame = struct {
-    func: *Object.FuncObj,
+    closure: *Object.ClosureObj,
     ip: usize = 0, // ip of the call
     slots: usize = 0,
 };
@@ -81,7 +81,11 @@ pub const Vm = struct {
         const function = compile(self, source, self.allocator) catch return InterpretErr.interpret_compile_error;
         self.push(Value.ObjectValue(&function.obj));
 
-        _ = self.call(function, 0); // 'main' function everything is wrapped in
+        const closure = Object.ClosureObj.newClosure(self, function);
+        _ = self.pop();
+        self.push(Value.ObjectValue(&closure.obj));
+
+        _ = self.call(closure, 0); // 'main' function everything is wrapped in
         return self.run();
     }
 
@@ -137,6 +141,11 @@ pub const Vm = struct {
                     } else {
                         return self.runtimeErr("FAILURE in VM Value was not and object {}\n");
                     }
+                },
+                .op_closure => {
+                    const func = self.read_constant().obj.asFunction();
+                    const closure = Object.ClosureObj.newClosure(self, func);
+                    self.push(Value.ObjectValue(&closure.obj));
                 },
                 .op_get_global => {
                     const val = self.read_constant();
@@ -234,20 +243,20 @@ pub const Vm = struct {
     }
 
     inline fn currentChunk(self: *Self) *Chunk {
-        return &self.currentFrame().func.chunk;
+        return &self.currentFrame().closure.func.chunk;
     }
 
-    inline fn call(self: *Self, func: *Object.FuncObj, argCount: u8) bool {
+    inline fn call(self: *Self, closure: *Object.ClosureObj, argCount: u8) bool {
         std.debug.print("INSIDE CALL", .{});
-        if (func.arity != argCount) {
-            _ = self.runtimeErrW("Expected {d} arguments but got {d}", .{ func.arity, argCount }) catch {};
+        if (closure.func.arity != argCount) {
+            _ = self.runtimeErrW("Expected {d} arguments but got {d}", .{ closure.func.arity, argCount }) catch {};
             return false;
         }
 
         var frame = &self.frames[self.frameCount];
         self.frameCount += 1;
 
-        frame.func = func;
+        frame.closure = closure;
         frame.ip = 0;
         frame.slots = self.stack_top - argCount - 1; // - 1 is to account for stack slot zero which the compiler set aside
         return true;
@@ -337,7 +346,9 @@ pub const Vm = struct {
         switch (callee) {
             .obj => |obj| {
                 switch (obj.objType) {
-                    .FUNCTION => return self.call(obj.asFunction(), argc),
+                    .CLOSURE => {
+                        return self.call(obj.asClosure(), argc);
+                    },
                     .NATIVE_FUNC => {
                         const args = self.stack[self.stack_top - argc - 1]; // retrieves the arguments from the stack
                         const result = callee.obj.asNativeFunc().function(self, argc, args); // call the zig function
@@ -396,7 +407,7 @@ pub const Vm = struct {
             i -= 1;
 
             const frame = &self.frames[i];
-            const function = frame.func;
+            const function = frame.closure.func;
             const instruction = frame.ip - 1;
 
             err_writer.print("[line {d}] in ", .{function.chunk.lines.items[instruction]}) catch {};
@@ -419,7 +430,7 @@ pub const Vm = struct {
             i -= 1;
 
             const frame = &self.frames[i];
-            const function = frame.func;
+            const function = frame.closure.func;
             const instruction = frame.ip - 1;
 
             err_writer.print("[line {d}] in ", .{function.chunk.lines.items[instruction]}) catch {};

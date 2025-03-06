@@ -40,6 +40,7 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
         .op_jump_if_false => jumpInstruction(instruction.toString(), 1, chunk, offset),
         .op_loop => jumpInstruction(instruction.toString(), -1, chunk, offset),
         .op_call => byteInstruction(instruction.toString(), chunk, offset),
+        .op_closure => closureInstruction(instruction.toString(), chunk, offset),
         .op_nil => simpleInstruction(instruction.toString(), offset),
         .op_not => simpleInstruction(instruction.toString(), offset),
         .op_greater => simpleInstruction(instruction.toString(), offset),
@@ -82,6 +83,29 @@ pub fn longConstInstruction(name: []const u8, chunk: *Chunk, offset: usize) usiz
         std.debug.print("Failed to print ending quote: {}\n", .{err});
     };
     return offset + 4;
+}
+
+fn closureInstruction(name: []const u8, chunk: *Chunk, initialOffset: usize) usize {
+    var offset = initialOffset + 1;
+    const constant = chunk.code.items[offset];
+    offset += 1;
+    std.debug.print("{s} {} ", .{ name, constant });
+    printValue(chunk.constants.items[constant]);
+    std.debug.print("\n", .{});
+
+    // Disassemble upvalues
+    //const function = chunk.constants.items[constant].obj.asFunction();
+    // var i: usize = 0;
+    // while (i < function.upvalueCount) : (i += 1) {
+    //     const isLocal = chunk.code.items[offset] != 1;
+    //     const valueType = if (isLocal) "local" else "upvalue";
+    //     offset += 1;
+    //     const index = chunk.code.items[offset];
+    //     offset += 1;
+    //     std.debug.print("{} | {s} {}\n", .{ offset - 2, valueType, index });
+    // }
+
+    return offset;
 }
 
 fn jumpInstruction(name: []const u8, sign: isize, chunk: *Chunk, offset: usize) usize {
