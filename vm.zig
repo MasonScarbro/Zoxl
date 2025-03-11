@@ -146,6 +146,23 @@ pub const Vm = struct {
                     const func = self.read_constant().obj.asFunction();
                     const closure = Object.ClosureObj.newClosure(self, func);
                     self.push(Value.ObjectValue(&closure.obj));
+                    for (0..closure.upvalueCount) |i| {
+                        const isLocal = self.read_byte() == 1;
+                        const index = self.read_byte();
+                        if (isLocal) {
+                            closure.upvalues[i] = self.captureUpvalue(self.stack[self.currentFrame().slots + index]);
+                        } else {
+                            closure.upvalues[i] = self.currentFrame().closure.upvalues[index];
+                        }
+                    }
+                },
+                .op_get_upvalue => {
+                    const slot = self.read_byte();
+                    self.push(self.currentFrame().closure.upvalues[slot].location);
+                },
+                .op_set_upvalue => {
+                    const slot = self.read_byte();
+                    self.currentFrame().closure.upvalues[slot].location = self.peek();
                 },
                 .op_get_global => {
                     const val = self.read_constant();
@@ -236,6 +253,11 @@ pub const Vm = struct {
                 },
             };
         }
+    }
+
+    inline fn captureUpvalue(self: *Self, local: Value) *Object.UpValueObj {
+        const created = Object.UpValueObj.newUpValue(self, local);
+        return created;
     }
 
     inline fn currentFrame(self: *Self) *CallFrame {

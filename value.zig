@@ -46,6 +46,7 @@ pub const Value = union(ValueType) {
             .FUNCTION => return objType == .FUNCTION,
             .NATIVE_FUNC => return objType == .NATIVE_FUNC,
             .CLOSURE => return objType == .CLOSURE,
+            .UPVALUE => return objType == .UPVALUE,
             //else => return false,
         }
     }
@@ -82,6 +83,7 @@ pub fn printValue(value: Value) void {
                 },
                 .NATIVE_FUNC => objVal.printObj(),
                 .CLOSURE => objVal.printObj(),
+                .UPVALUE => objVal.printObj(),
                 //else => unreachable,
             }
         },

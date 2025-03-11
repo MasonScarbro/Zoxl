@@ -9,6 +9,7 @@ pub const ObjectType = enum {
     STRING,
     FUNCTION,
     NATIVE_FUNC,
+    UPVALUE,
     CLOSURE,
 };
 
@@ -31,6 +32,7 @@ pub const Object = struct {
             .FUNCTION => self.asFunction().free(vm),
             .NATIVE_FUNC => self.asNativeFunc().free(vm),
             .CLOSURE => self.asClosure().free(vm),
+            .UPVALUE => self.asUpValue().free(vm),
         }
     }
 
@@ -50,6 +52,10 @@ pub const Object = struct {
         return @fieldParentPtr("obj", self);
     }
 
+    pub inline fn asUpValue(self: *Object) *UpValueObj {
+        return @fieldParentPtr("obj", self);
+    }
+
     pub inline fn isA(value: Value, objType: ObjectType) bool {
         return value == .obj and value.obj.objType == objType;
     }
@@ -60,6 +66,7 @@ pub const Object = struct {
             .FUNCTION => self.asFunction().printSelf(),
             .NATIVE_FUNC => self.asNativeFunc().printSelf(),
             .CLOSURE => self.asClosure().printSelf(),
+            .UPVALUE => self.asUpValue().printSelf(),
         }
     }
 };
@@ -89,7 +96,7 @@ pub const StringObj = struct {
     }
 
     pub fn printSelf(self: *StringObj) void {
-        std.debug.print("%s", .{self.chars});
+        std.debug.print("{s}", .{self.chars});
     }
 
     pub fn copyStr(vm: *Vm, chars: []const u8) *StringObj {
@@ -124,17 +131,43 @@ pub const StringObj = struct {
     }
 };
 
+pub const UpValueObj = struct {
+    obj: Object,
+    location: Value,
+    closed: Value,
+
+    pub fn newUpValue(vm: *Vm, slot: Value) *UpValueObj {
+        var upvalue: *UpValueObj = Object.create(vm, UpValueObj, .UPVALUE);
+        upvalue.location = slot;
+        return upvalue;
+    }
+
+    pub fn free(self: *UpValueObj, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+
+    pub fn printSelf(self: *UpValueObj) void {
+        _ = self;
+        std.debug.print("<upvalue>", .{});
+    }
+};
+
 pub const ClosureObj = struct {
     obj: Object,
     func: *FuncObj,
+    upvalues: []*UpValueObj,
+    upvalueCount: u8,
 
     pub fn newClosure(vm: *Vm, func: *FuncObj) *ClosureObj {
         var closure: *ClosureObj = Object.create(vm, ClosureObj, .CLOSURE);
         closure.func = func;
+        closure.upvalues = vm.allocator.alloc(*UpValueObj, func.upvalueCount) catch @panic("Error creating Closure Upvalues");
+        closure.upvalueCount = func.upvalueCount;
         return closure;
     }
 
     pub fn free(self: *ClosureObj, vm: *Vm) void {
+        vm.allocator.free(self.upvalues);
         vm.allocator.destroy(self);
     }
 
@@ -148,11 +181,13 @@ pub const FuncObj = struct {
     arity: usize,
     chunk: Chunk,
     name: ?*StringObj,
+    upvalueCount: u8,
 
     pub fn newFunc(vm: *Vm) *FuncObj {
         std.debug.print("\nMaking object\n", .{});
         var func: *FuncObj = Object.create(vm, FuncObj, .FUNCTION);
         func.arity = 0;
+        func.upvalueCount = 0;
         func.name = null;
         func.chunk = Chunk.init(&vm.allocator);
         return func;
@@ -168,7 +203,7 @@ pub const FuncObj = struct {
             std.debug.print("<script>", .{});
             return;
         }
-        std.debug.print("<fn %s>", .{self.name.?.chars});
+        std.debug.print("<fn {s}>", .{self.name.?.chars});
     }
 };
 

@@ -44,6 +44,11 @@ const Local = struct {
     depth: ?usize = null,
 };
 
+const Upvalue = struct {
+    index: u8,
+    isLocal: bool,
+};
+
 const ParseRule = struct {
     prefix: ?ParseFn,
     infix: ?ParseFn,
@@ -132,11 +137,15 @@ pub const Parser = struct {
         var setOp: OpCode = undefined;
         var arg: u8 = undefined;
 
-        if (self.resolveLocal(name)) |local| {
+        if (self.resolveLocal(self.compiler, name)) |local| {
             arg = local;
 
             getOp = OpCode.op_get_local;
             setOp = OpCode.op_set_local;
+        } else if (self.resolveUpvalue(self.compiler, name)) |upvalue| {
+            arg = upvalue;
+            getOp = OpCode.op_get_upvalue;
+            setOp = OpCode.op_set_upvalue;
         } else {
             arg = self.identifierConst(name);
             getOp = OpCode.op_get_global;
@@ -151,15 +160,32 @@ pub const Parser = struct {
         }
     }
 
-    pub fn resolveLocal(self: *Self, name: Token) ?u8 {
+    pub fn resolveUpvalue(self: *Self, compiler: *Compiler, name: Token) ?u8 {
+        if (compiler.enclosing == null) return null;
+
+        const local = self.resolveLocal(self.compiler.enclosing.?, name);
+        if (local != null) {
+            return compiler.addUpvalue(local.?, true);
+        }
+
+        const upval = self.resolveUpvalue(self.compiler.enclosing.?, name);
+        if (upval != null) {
+            return compiler.addUpvalue(upval.?, false);
+        }
+
+        return null;
+    }
+
+    pub fn resolveLocal(self: *Self, compiler: *Compiler, name: Token) ?u8 {
 
         //std.debug.print("\nInside Resolve Local", .{});
 
         var i: usize = self.compiler.localCount;
         while (i > 0) {
             i -= 1;
-            std.debug.print("\nlocal count: {}\n", .{self.compiler.localCount});
-            const local = self.compiler.locals.items[@as(usize, @intCast(i))];
+            std.debug.print("\nlocal count: {}\n", .{compiler.localCount});
+            const local = compiler.locals.items[@as(usize, @intCast(i))];
+
             if (self.identifiersEqual(name, local.name)) {
                 if (local.depth == null) {
                     self.err("Can't read local variable in its own initializer.");
@@ -193,10 +219,8 @@ pub const Parser = struct {
     pub fn function(self: *Self, ftype: FuncType) void {
         std.debug.print("\nInside function (compile\n)", .{});
         var functionCompiler = Compiler.init(self.vm, ftype, self.compiler, self.compiler.allocator);
-
-        self.compiler = &functionCompiler;
-
         functionCompiler.function.name = Object.StringObj.copyStr(self.vm, self.previous.lexeme);
+        self.compiler = &functionCompiler;
 
         self.compiler.beginScope();
 
@@ -221,11 +245,16 @@ pub const Parser = struct {
 
         self.block();
         self.compiler.endScope(self.previous.line);
-        var func = functionCompiler.endCompiler(self.previous.line);
+        var func = self.compiler.endCompiler(self.previous.line);
         if (self.compiler.enclosing) |enclosing| {
             self.compiler = enclosing;
         }
         self.compiler.emitBytes(OpCode.op_closure.toU8(), self.makeConstant(Value.ObjectValue(&func.obj)), self.previous.line);
+        for (0..func.upvalueCount) |i| {
+            const upval = &functionCompiler.upvalues[i];
+            self.compiler.emitByte(if (upval.isLocal) 1 else 0, self.previous.line);
+            self.compiler.emitByte(upval.index, self.previous.line);
+        }
     }
 
     pub fn declaration(self: *Self) void {
@@ -518,7 +547,7 @@ pub const Parser = struct {
     inline fn declareVar(self: *Self) void {
         std.debug.print("\nInside declareVar\n", .{});
         if (self.compiler.scopeDepth == 0) return; //global just bail
-
+        const name = self.previous;
         var i = self.compiler.localCount;
 
         while (i > 0) {
@@ -532,7 +561,7 @@ pub const Parser = struct {
                 self.err("Already a variable with this name in this scope.");
             }
         }
-        self.compiler.addLocal(self.previous);
+        self.compiler.addLocal(name);
     }
 
     fn identifiersEqual(self: *Self, a: Token, b: Token) bool {
@@ -803,6 +832,7 @@ pub const Compiler = struct {
     allocator: Allocator,
     hadErr: bool = false,
     locals: std.ArrayList(Local),
+    upvalues: [256]Upvalue = undefined,
     localCount: usize = 0,
     scopeDepth: usize = 0,
 
@@ -828,7 +858,7 @@ pub const Compiler = struct {
         std.debug.print("\nTrying to make new local", .{});
         const newLocal = Local{
             .name = name,
-            .depth = 0,
+            .depth = null,
         };
 
         if (self.locals.append(newLocal)) |*_| {
@@ -837,6 +867,20 @@ pub const Compiler = struct {
             std.debug.print("\nERR: Failed appending newLocal????", .{});
             self.hadErr = true;
         }
+    }
+
+    pub fn addUpvalue(self: *Self, index: u8, isLocal: bool) u8 {
+        const upvalueCount = self.function.upvalueCount;
+        for (0..upvalueCount) |i| {
+            const upvalue = &self.upvalues[i];
+
+            if (upvalue.index == index and upvalue.isLocal == isLocal) {
+                return @as(u8, @intCast(i));
+            }
+        }
+        self.upvalues[upvalueCount] = Upvalue{ .isLocal = isLocal, .index = index };
+        self.function.upvalueCount += 1;
+        return self.function.upvalueCount;
     }
 
     pub fn deinit(self: *Self) void {
