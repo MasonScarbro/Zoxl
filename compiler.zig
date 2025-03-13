@@ -163,12 +163,12 @@ pub const Parser = struct {
     pub fn resolveUpvalue(self: *Self, compiler: *Compiler, name: Token) ?u8 {
         if (compiler.enclosing == null) return null;
 
-        const local = self.resolveLocal(self.compiler.enclosing.?, name);
+        const local = self.resolveLocal(compiler.enclosing.?, name);
         if (local != null) {
             return compiler.addUpvalue(local.?, true);
         }
 
-        const upval = self.resolveUpvalue(self.compiler.enclosing.?, name);
+        const upval = self.resolveUpvalue(compiler.enclosing.?, name);
         if (upval != null) {
             return compiler.addUpvalue(upval.?, false);
         }
@@ -244,7 +244,7 @@ pub const Parser = struct {
         self.consume(TokenType.LEFTBRACE, "Expected '{' after block");
 
         self.block();
-        self.compiler.endScope(self.previous.line);
+
         var func = self.compiler.endCompiler(self.previous.line);
         if (self.compiler.enclosing) |enclosing| {
             self.compiler = enclosing;
@@ -840,16 +840,10 @@ pub const Compiler = struct {
         std.debug.print("\nIniting Compiler\n", .{});
         var compiler = Self{ .function = Object.FuncObj.newFunc(vm), .funcType = ftype, .allocator = allocator, .locals = std.ArrayList(Local).init(allocator), .enclosing = enclosing };
         std.debug.print("\nCreated compiler\n", .{});
-        if (ftype == FuncType.SCRIPT) {
-            std.debug.print("Was a script Making top level code func", .{});
-            const local = Local{ .depth = 0, .name = .{ .lexeme = "", .line = 0, .token_type = TokenType.IDENTIFIER } };
-            if (compiler.locals.append(local)) |*_| {
-                compiler.localCount += 1;
-            } else |_| {
-                std.debug.print("\nERR: Failed appending newLocal????", .{});
-                compiler.hadErr = true;
-            }
-        }
+
+        std.debug.print("Was a script Making top level code func", .{});
+        const local = Local{ .depth = 0, .name = .{ .lexeme = "", .line = 0, .token_type = TokenType.FUN } };
+        compiler.addLocal(local.name);
 
         return compiler;
     }
@@ -880,7 +874,7 @@ pub const Compiler = struct {
         }
         self.upvalues[upvalueCount] = Upvalue{ .isLocal = isLocal, .index = index };
         self.function.upvalueCount += 1;
-        return self.function.upvalueCount;
+        return upvalueCount;
     }
 
     pub fn deinit(self: *Self) void {

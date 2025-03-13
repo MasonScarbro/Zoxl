@@ -101,6 +101,7 @@ pub const Vm = struct {
                 .op_return => {
                     const result = self.pop();
                     const frame = self.currentFrame();
+                    const slots = frame.slots;
                     self.frameCount -= 1;
                     if (self.frameCount == 0) {
                         _ = self.pop();
@@ -108,7 +109,7 @@ pub const Vm = struct {
                     }
                     std.debug.print("stack_top: {}\nslots: {}\n", .{ self.stack_top, self.currentFrame().slots });
 
-                    self.stack_top = frame.slots;
+                    self.stack_top = slots;
                     self.push(result);
                 },
                 .op_print => {
@@ -157,6 +158,7 @@ pub const Vm = struct {
                     }
                 },
                 .op_get_upvalue => {
+                    std.debug.print("In OP_GET_UPVALUE", .{});
                     const slot = self.read_byte();
                     self.push(self.currentFrame().closure.upvalues[slot].location);
                 },
@@ -196,8 +198,8 @@ pub const Vm = struct {
                 },
                 .op_get_local => {
                     std.debug.print("Inside VM op_get_local", .{});
-                    const slot = self.read_instruction().toU8();
-                    self.push(self.stack[self.currentFrame().slots + slot + 1]);
+                    const slot = self.read_byte();
+                    self.push(self.stack[self.currentFrame().slots + slot]);
                 },
                 .op_equal => {
                     const b = self.pop();
@@ -280,7 +282,7 @@ pub const Vm = struct {
 
         frame.closure = closure;
         frame.ip = 0;
-        frame.slots = self.stack_top - argCount - 1; // - 1 is to account for stack slot zero which the compiler set aside
+        frame.slots = self.stack_top - argCount - 1; // Reserve the first slot for the function object
         return true;
     }
 
@@ -365,6 +367,7 @@ pub const Vm = struct {
 
     pub inline fn callValue(self: *Self, callee: Value, argc: u8) bool {
         std.debug.print("CALLING values with args ", .{});
+        //std.debug.print("\nCALLEE is OBJECT {b}", .{Value.isObj()});
         switch (callee) {
             .obj => |obj| {
                 switch (obj.objType) {
@@ -379,7 +382,7 @@ pub const Vm = struct {
                         return true;
                     },
                     else => {
-                        _ = self.runtimeErr("Can only call functions and classes") catch {};
+                        _ = self.runtimeErr("Can only call functions and classes this was a") catch {};
                         return false;
                     },
                 }
