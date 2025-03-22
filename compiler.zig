@@ -180,7 +180,7 @@ pub const Parser = struct {
 
         //std.debug.print("\nInside Resolve Local", .{});
 
-        var i: usize = self.compiler.localCount;
+        var i: usize = compiler.localCount;
         while (i > 0) {
             i -= 1;
             std.debug.print("\nlocal count: {}\n", .{compiler.localCount});
