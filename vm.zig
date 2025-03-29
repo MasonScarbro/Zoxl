@@ -45,6 +45,7 @@ pub const Vm = struct {
     allocator: Allocator,
     strings: HashTable,
     globals: HashTable,
+    openUpvalues: ?*Object.UpValueObj = null,
 
     pub fn test_init(allocator: Allocator, chunk: *Chunk) Self {
         var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0, .allocator = allocator };
@@ -151,20 +152,24 @@ pub const Vm = struct {
                         const isLocal = self.read_byte() == 1;
                         const index = self.read_byte();
                         if (isLocal) {
-                            closure.upvalues[i] = self.captureUpvalue(self.stack[self.currentFrame().slots + index]);
+                            closure.upvalues[i] = self.captureUpvalue(&self.stack[self.currentFrame().slots + index]);
                         } else {
                             closure.upvalues[i] = self.currentFrame().closure.upvalues[index];
                         }
                     }
                 },
+                .op_close_upvalue => {
+                    self.closeUpvalue(&self.stack[self.stack_top - 1]);
+                    _ = self.pop();
+                },
                 .op_get_upvalue => {
                     std.debug.print("In OP_GET_UPVALUE", .{});
                     const slot = self.read_byte();
-                    self.push(self.currentFrame().closure.upvalues[slot].location);
+                    self.push(self.currentFrame().closure.upvalues[slot].location.*);
                 },
                 .op_set_upvalue => {
                     const slot = self.read_byte();
-                    self.currentFrame().closure.upvalues[slot].location = self.peek();
+                    self.currentFrame().closure.upvalues[slot].location.* = self.peek();
                 },
                 .op_get_global => {
                     const val = self.read_constant();
@@ -257,8 +262,37 @@ pub const Vm = struct {
         }
     }
 
-    inline fn captureUpvalue(self: *Self, local: Value) *Object.UpValueObj {
-        const created = Object.UpValueObj.newUpValue(self, local);
+    inline fn closeUpvalue(self: *Self, last: *Value) void {
+        while (self.openUpvalues) |openUpvalues| {
+            if (@intFromPtr(openUpvalues.location) < @intFromPtr(last)) break;
+            const upvalue = openUpvalues;
+            upvalue.closed = upvalue.location.*;
+            upvalue.location = &upvalue.closed;
+            self.openUpvalues = upvalue.next;
+        }
+    }
+
+    inline fn captureUpvalue(self: *Self, local: *Value) *Object.UpValueObj {
+        var prevUpvalue: ?*Object.UpValueObj = null;
+        var maybeUpvalue = self.openUpvalues;
+
+        while (maybeUpvalue) |upvalue| {
+            if (@intFromPtr(upvalue.location) <= @intFromPtr(local)) break;
+            prevUpvalue = upvalue;
+            maybeUpvalue = upvalue.next;
+        }
+
+        if (maybeUpvalue) |upvalue| {
+            if (upvalue.location == local) return upvalue;
+        }
+        const created = Object.UpValueObj.newUpValue(self, local.*);
+        created.next = maybeUpvalue;
+
+        if (prevUpvalue == null) {
+            self.openUpvalues = created;
+        } else {
+            prevUpvalue.?.next = created;
+        }
         return created;
     }
 
@@ -310,6 +344,8 @@ pub const Vm = struct {
 
     inline fn reset_stack(self: *Self) void {
         self.stack_top = 0;
+        self.frameCount = 0;
+        self.openUpvalues = null;
     }
 
     pub inline fn push(self: *Self, value: Value) void {

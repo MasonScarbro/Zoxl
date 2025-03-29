@@ -43,6 +43,7 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
         .op_loop => jumpInstruction(instruction.toString(), -1, chunk, offset),
         .op_call => byteInstruction(instruction.toString(), chunk, offset),
         .op_closure => closureInstruction(instruction.toString(), chunk, offset),
+        .op_close_upvalue => simpleInstruction(instruction.toString(), offset),
         .op_nil => simpleInstruction(instruction.toString(), offset),
         .op_not => simpleInstruction(instruction.toString(), offset),
         .op_greater => simpleInstruction(instruction.toString(), offset),

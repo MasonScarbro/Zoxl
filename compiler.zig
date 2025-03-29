@@ -42,6 +42,7 @@ const ParseFn = *const fn (parser: *Parser, canAssign: bool) void;
 const Local = struct {
     name: Token,
     depth: ?usize = null,
+    isCaptured: bool = false,
 };
 
 const Upvalue = struct {
@@ -165,6 +166,7 @@ pub const Parser = struct {
 
         const local = self.resolveLocal(compiler.enclosing.?, name);
         if (local != null) {
+            compiler.enclosing.?.locals.items[local.?].isCaptured = true;
             return compiler.addUpvalue(local.?, true);
         }
 
@@ -853,6 +855,7 @@ pub const Compiler = struct {
         const newLocal = Local{
             .name = name,
             .depth = null,
+            .isCaptured = false,
         };
 
         if (self.locals.append(newLocal)) |*_| {
@@ -889,7 +892,12 @@ pub const Compiler = struct {
     pub fn endScope(self: *Self, line: usize) void {
         self.scopeDepth -= 1;
         while (self.localCount > 0 and self.locals.items[self.localCount - 1].depth.? > self.scopeDepth) {
-            self.emitByte(OpCode.op_pop.toU8(), line);
+            if (self.locals.items[self.localCount - 1].isCaptured) {
+                self.emitByte(OpCode.op_close_upvalue.toU8(), line);
+            } else {
+                self.emitByte(OpCode.op_pop.toU8(), line);
+            }
+
             self.localCount -= 1;
         }
         std.debug.print("\nEnding Scope", .{});

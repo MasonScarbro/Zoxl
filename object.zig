@@ -133,12 +133,15 @@ pub const StringObj = struct {
 
 pub const UpValueObj = struct {
     obj: Object,
-    location: Value,
+    location: *Value,
     closed: Value,
+    next: ?*UpValueObj = null,
 
     pub fn newUpValue(vm: *Vm, slot: Value) *UpValueObj {
         var upvalue: *UpValueObj = Object.create(vm, UpValueObj, .UPVALUE);
-        upvalue.location = slot;
+        upvalue.location.* = slot;
+        upvalue.next = null;
+        upvalue.closed = Value.NilValue();
         return upvalue;
     }
 
