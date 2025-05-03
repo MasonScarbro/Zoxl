@@ -16,12 +16,21 @@ pub const ObjectType = enum {
 pub const Object = struct {
     objType: ObjectType,
     next: ?*Object,
+    isMarked: bool = false,
 
     pub fn create(vm: *Vm, comptime T: type, objectType: ObjectType) *T {
         // Allocate memory for type T using the allocator
+        const size = @sizeOf(T);
+        vm.bytesAllocated += size;
+        if (vm.bytesAllocated > vm.nextGC and vm.collector != null) {
+            vm.collector.?.collectGarbage();
+            vm.nextGC = vm.bytesAllocated * 2;
+        }
+
         const object = vm.allocator.create(T) catch @panic("err creating Obj\n");
         object.obj = Object{ .objType = objectType, .next = vm.objects }; // Initialize the Object part
         vm.objects = &object.obj;
+
         return object;
     }
 

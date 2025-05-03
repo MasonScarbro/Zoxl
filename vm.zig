@@ -12,6 +12,7 @@ const Object = @import("./object.zig");
 const DEBUG_TRACE_EXECUTION = false;
 const HashTable = @import("./hashTable.zig").HashTable;
 const nativeFuncs = @import("./nativeFuncs.zig");
+const GC = @import("./garbage_collection.zig").GarbageCollector;
 
 const STACK_MAX = 256;
 const FRAMES_MAX = 64;
@@ -46,6 +47,9 @@ pub const Vm = struct {
     strings: HashTable,
     globals: HashTable,
     openUpvalues: ?*Object.UpValueObj = null,
+    bytesAllocated: usize = 0,
+    nextGC: usize = 1024 * 1204,
+    collector: ?*GC = null,
 
     pub fn test_init(allocator: Allocator, chunk: *Chunk) Self {
         var vm = Self{ .chunk = chunk, .ip = 0, .stack_top = 0, .allocator = allocator };
@@ -61,6 +65,7 @@ pub const Vm = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        //self.collector.?.collectGarbage(); here?
         self.freeObjects();
         self.strings.deinit();
         self.globals.deinit();

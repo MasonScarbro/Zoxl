@@ -12,7 +12,7 @@ const disassembleChunk = @import("./debugging.zig").disassembleChunk;
 const initStdErr = @import("./main.zig").initStdErr();
 const Allocator = std.mem.Allocator;
 const debug_parse_rule = true;
-
+const GC = @import("./garbage_collection.zig").GarbageCollector;
 const CompileError = error{
     CompileErr,
     ScannerErr,
@@ -67,6 +67,8 @@ const ParseRule = struct {
 pub fn compile(vm: *Vm, src: []const u8, allocator: Allocator) CompileError!*Object.FuncObj {
     var scanner = Scanner.init(src);
     var compiler = Compiler.init(vm, FuncType.SCRIPT, null, allocator);
+    var gc = GC.init(vm, &compiler);
+    vm.collector = &gc;
     var parser = Parser.init(vm, &scanner, &compiler);
     parser.advance(); //Kick off parser
     if (parser.hadErr == true) return CompileError.ScannerErr;
