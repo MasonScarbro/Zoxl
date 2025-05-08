@@ -11,6 +11,7 @@ pub const ObjectType = enum {
     NATIVE_FUNC,
     UPVALUE,
     CLOSURE,
+    CLASS,
 };
 
 pub const Object = struct {
@@ -42,6 +43,9 @@ pub const Object = struct {
             .NATIVE_FUNC => self.asNativeFunc().free(vm),
             .CLOSURE => self.asClosure().free(vm),
             .UPVALUE => self.asUpValue().free(vm),
+            .CLASS => {
+                self.asClass().free(vm);
+            },
         }
     }
 
@@ -65,6 +69,10 @@ pub const Object = struct {
         return @fieldParentPtr("obj", self);
     }
 
+    pub inline fn asClass(self: *Object) *ClassObj {
+        return @fieldParentPtr("obj", self);
+    }
+
     pub inline fn isA(value: Value, objType: ObjectType) bool {
         return value == .obj and value.obj.objType == objType;
     }
@@ -76,6 +84,7 @@ pub const Object = struct {
             .NATIVE_FUNC => self.asNativeFunc().printSelf(),
             .CLOSURE => self.asClosure().printSelf(),
             .UPVALUE => self.asUpValue().printSelf(),
+            .CLASS => self.asClass().printSelf(),
         }
     }
 };
@@ -216,6 +225,27 @@ pub const FuncObj = struct {
             return;
         }
         std.debug.print("<fn {s}>", .{self.name.?.chars});
+    }
+};
+
+pub const ClassObj = struct {
+    obj: Object,
+    name: *StringObj,
+    methods: ?*Object, // TODO: Change to a map of methods
+
+    pub fn newClass(vm: *Vm, name: *StringObj) *ClassObj {
+        var class: *ClassObj = Object.create(vm, ClassObj, .CLASS);
+        class.name = name;
+        class.methods = null;
+        return class;
+    }
+
+    pub fn free(self: *ClassObj, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+
+    pub fn printSelf(self: *ClassObj) void {
+        std.debug.print("<class {s}>", .{self.name.chars});
     }
 };
 

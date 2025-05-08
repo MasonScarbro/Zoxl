@@ -118,6 +118,11 @@ pub const Vm = struct {
                     self.stack_top = slots;
                     self.push(result);
                 },
+                .op_class => {
+                    const name = self.read_constant().obj.asString();
+                    const class = Object.ClassObj.newClass(self, name);
+                    self.push(Value.ObjectValue(&class.obj));
+                },
                 .op_print => {
                     std.debug.print("\nPrinting Value:\t", .{});
 

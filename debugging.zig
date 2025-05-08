@@ -25,6 +25,7 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
 
     return switch (instruction) {
         .op_return => simpleInstruction(instruction.toString(), offset),
+        .op_class => constInstruction(instruction.toString(), chunk, offset),
         .op_print => simpleInstruction(instruction.toString(), offset),
         .op_constant => constInstruction(instruction.toString(), chunk, offset),
         .op_false => simpleInstruction(instruction.toString(), offset),

@@ -116,6 +116,7 @@ pub const GarbageCollector = struct {
             .UPVALUE => self.markValue(&obj.asUpValue().closed),
             .STRING => return,
             .NATIVE_FUNC => return,
+            .CLASS => return, //Not yet implemented
         }
     }
     fn markCompilerRoots(self: *Self) void {

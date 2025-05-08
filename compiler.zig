@@ -264,6 +264,8 @@ pub const Parser = struct {
     pub fn declaration(self: *Self) void {
         if (self.match(TokenType.FUN)) {
             self.funDeclaration();
+        } else if (self.match(TokenType.CLASS)) {
+            self.classDeclaration();
         } else if (self.match(TokenType.VAR)) {
             self.varDeclaration();
         } else {
@@ -305,6 +307,18 @@ pub const Parser = struct {
             self.consume(TokenType.SEMICOLON, "Expected ';' after return value.");
             self.compiler.emitByte(OpCode.op_return.toU8(), self.previous.line);
         }
+    }
+
+    pub fn classDeclaration(self: *Self) void {
+        self.consume(TokenType.IDENTIFIER, "Expected class name.");
+        const nameConst = self.identifierConst(self.previous);
+        self.declareVar();
+
+        self.compiler.emitBytes(OpCode.op_class.toU8(), nameConst, self.previous.line);
+        self.defineVar(nameConst);
+
+        self.consume(TokenType.LEFTBRACE, "Expected '{' after class name.");
+        self.consume(TokenType.RIGHTBRACE, "Expected '{' after class name.");
     }
 
     pub fn exprStatement(self: *Self) void {

@@ -47,6 +47,7 @@ pub const Value = union(ValueType) {
             .NATIVE_FUNC => return objType == .NATIVE_FUNC,
             .CLOSURE => return objType == .CLOSURE,
             .UPVALUE => return objType == .UPVALUE,
+            .CLASS => return objType == .CLASS,
             //else => return false,
         }
     }
@@ -84,7 +85,7 @@ pub fn printValue(value: Value) void {
                 .NATIVE_FUNC => objVal.printObj(),
                 .CLOSURE => objVal.printObj(),
                 .UPVALUE => objVal.printObj(),
-                //else => unreachable,
+                .CLASS => objVal.printObj(),
             }
         },
         .nil => std.debug.print("nil\n", .{}),
