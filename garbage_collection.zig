@@ -117,6 +117,7 @@ pub const GarbageCollector = struct {
             .STRING => return,
             .NATIVE_FUNC => return,
             .CLASS => return, //Not yet implemented
+            .INSTANCE => return, //Not yet implemented
         }
     }
     fn markCompilerRoots(self: *Self) void {

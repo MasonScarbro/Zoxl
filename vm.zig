@@ -420,6 +420,12 @@ pub const Vm = struct {
                     .CLOSURE => {
                         return self.call(obj.asClosure(), argc);
                     },
+                    .CLASS => {
+                        const class = obj.asClass();
+                        const instance = Object.InstanceObj.newInstance(self, class);
+                        self.stack[self.stack_top - argc - 1] = Value.ObjectValue(&instance.obj);
+                        return true;
+                    },
                     .NATIVE_FUNC => {
                         const args = self.stack[self.stack_top - argc - 1]; // retrieves the arguments from the stack
                         const result = callee.obj.asNativeFunc().function(self, argc, args); // call the zig function

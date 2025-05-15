@@ -48,6 +48,7 @@ pub const Value = union(ValueType) {
             .CLOSURE => return objType == .CLOSURE,
             .UPVALUE => return objType == .UPVALUE,
             .CLASS => return objType == .CLASS,
+            .INSTANCE => return objType == .INSTANCE,
             //else => return false,
         }
     }
@@ -86,6 +87,7 @@ pub fn printValue(value: Value) void {
                 .CLOSURE => objVal.printObj(),
                 .UPVALUE => objVal.printObj(),
                 .CLASS => objVal.printObj(),
+                .INSTANCE => objVal.printObj(),
             }
         },
         .nil => std.debug.print("nil\n", .{}),

@@ -4,15 +4,8 @@ const memutils = @import("./utils.mem.zig");
 const Vm = @import("./vm.zig").Vm;
 const Allocator = std.mem.Allocator;
 const Chunk = @import("./chunk.zig").Chunk;
-
-pub const ObjectType = enum {
-    STRING,
-    FUNCTION,
-    NATIVE_FUNC,
-    UPVALUE,
-    CLOSURE,
-    CLASS,
-};
+const HashTable = @import("./hashTable.zig").HashTable;
+pub const ObjectType = enum { STRING, FUNCTION, NATIVE_FUNC, UPVALUE, CLOSURE, CLASS, INSTANCE };
 
 pub const Object = struct {
     objType: ObjectType,
@@ -46,6 +39,9 @@ pub const Object = struct {
             .CLASS => {
                 self.asClass().free(vm);
             },
+            .INSTANCE => {
+                self.asInstance().free(vm);
+            },
         }
     }
 
@@ -73,6 +69,10 @@ pub const Object = struct {
         return @fieldParentPtr("obj", self);
     }
 
+    pub inline fn asInstance(self: *Object) *InstanceObj {
+        return @fieldParentPtr("obj", self);
+    }
+
     pub inline fn isA(value: Value, objType: ObjectType) bool {
         return value == .obj and value.obj.objType == objType;
     }
@@ -85,6 +85,7 @@ pub const Object = struct {
             .CLOSURE => self.asClosure().printSelf(),
             .UPVALUE => self.asUpValue().printSelf(),
             .CLASS => self.asClass().printSelf(),
+            .INSTANCE => self.asInstance().printSelf(),
         }
     }
 };
@@ -231,12 +232,12 @@ pub const FuncObj = struct {
 pub const ClassObj = struct {
     obj: Object,
     name: *StringObj,
-    methods: ?*Object, // TODO: Change to a map of methods
+    methods: HashTable,
 
     pub fn newClass(vm: *Vm, name: *StringObj) *ClassObj {
         var class: *ClassObj = Object.create(vm, ClassObj, .CLASS);
         class.name = name;
-        class.methods = null;
+        class.methods = HashTable.init(vm.allocator);
         return class;
     }
 
@@ -246,6 +247,27 @@ pub const ClassObj = struct {
 
     pub fn printSelf(self: *ClassObj) void {
         std.debug.print("<class {s}>", .{self.name.chars});
+    }
+};
+
+pub const InstanceObj = struct {
+    obj: Object,
+    class: *ClassObj,
+    fields: HashTable,
+
+    pub fn newInstance(vm: *Vm, class: *ClassObj) *InstanceObj {
+        var instance: *InstanceObj = Object.create(vm, InstanceObj, .CLASS);
+        instance.class = class;
+        instance.fields = HashTable.init(vm.allocator);
+        return instance;
+    }
+
+    pub fn free(self: *InstanceObj, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+
+    pub fn printSelf(self: *InstanceObj) void {
+        std.debug.print("<instance {s}>", .{self.class.name.chars});
     }
 };
 
