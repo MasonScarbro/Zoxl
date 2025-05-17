@@ -318,7 +318,7 @@ pub const Parser = struct {
         self.defineVar(nameConst);
 
         self.consume(TokenType.LEFTBRACE, "Expected '{' after class name.");
-        self.consume(TokenType.RIGHTBRACE, "Expected '{' after class name.");
+        self.consume(TokenType.RIGHTBRACE, "Expected '}' after class name.");
     }
 
     pub fn exprStatement(self: *Self) void {
@@ -700,6 +700,18 @@ pub const Parser = struct {
         self.compiler.emitBytes(OpCode.op_call.toU8(), argCount, self.previous.line);
     }
 
+    pub fn dot(self: *Self, canAssign: bool) void {
+        std.debug.print("\nInside Dot\n", .{});
+        self.consume(TokenType.IDENTIFIER, "Expected property name after '.'");
+        const nameConst = self.identifierConst(self.previous);
+        if (canAssign and self.match(TokenType.EQUAL)) {
+            self.expr();
+            self.compiler.emitBytes(OpCode.op_set_property.toU8(), nameConst, self.previous.line);
+        } else {
+            self.compiler.emitBytes(OpCode.op_get_property.toU8(), nameConst, self.previous.line);
+        }
+    }
+
     pub fn parsePrecedence(self: *Self, precedence: Precedence) void {
         self.advance();
         const prefixRule = getRule(self.previous.token_type).prefix orelse {
@@ -793,7 +805,7 @@ pub fn getRule(ttype: TokenType) ParseRule {
         .LEFTBRACE => comptime ParseRule.init(null, null, Precedence.NONE),
         .RIGHTBRACE => comptime ParseRule.init(null, null, Precedence.NONE),
         .COMMA => comptime ParseRule.init(null, null, Precedence.NONE),
-        .DOT => comptime ParseRule.init(null, null, Precedence.NONE),
+        .DOT => comptime ParseRule.init(null, Parser.dot, Precedence.CALL),
         .MINUS => comptime ParseRule.init(Parser.unary, Parser.binary, Precedence.TERM),
         .PLUS => comptime ParseRule.init(null, Parser.binary, Precedence.TERM),
         .SEMICOLON => comptime ParseRule.init(null, null, Precedence.NONE),

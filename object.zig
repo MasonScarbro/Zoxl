@@ -256,7 +256,7 @@ pub const InstanceObj = struct {
     fields: HashTable,
 
     pub fn newInstance(vm: *Vm, class: *ClassObj) *InstanceObj {
-        var instance: *InstanceObj = Object.create(vm, InstanceObj, .CLASS);
+        var instance: *InstanceObj = Object.create(vm, InstanceObj, .INSTANCE);
         instance.class = class;
         instance.fields = HashTable.init(vm.allocator);
         return instance;

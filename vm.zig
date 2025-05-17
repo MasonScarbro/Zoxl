@@ -181,6 +181,39 @@ pub const Vm = struct {
                     const slot = self.read_byte();
                     self.currentFrame().closure.upvalues[slot].location.* = self.peek();
                 },
+                .op_get_property => {
+                    var val = self.peek();
+                    if (val.isObjType(.INSTANCE)) {
+                        const instance = val.obj.asInstance();
+                        const name = self.read_constant().obj.asString();
+
+                        if (instance.fields.get(name)) |value| {
+                            _ = self.pop(); // pop the instance
+                            self.push(value.*);
+                        } else {
+                            _ = self.runtimeErrW("Undefined property '{s}'", .{name.chars}) catch {};
+                            return InterpretErr.interpret_runtime_error;
+                        }
+                    } else {
+                        return self.runtimeErr("Only an Instance can have properties and it thins its a get???");
+                    }
+                },
+                .op_set_property => {
+                    var val = self.peekBack(1);
+                    std.debug.print("In OP_SET_PROPERTY\n", .{});
+                    std.debug.print("val is: {}\n", .{val});
+                    std.debug.print("val type is: {}\n", .{val.obj.objType});
+                    if (val.isObjType(.INSTANCE)) {
+                        const instance = val.obj.asInstance();
+                        const name = self.read_constant().obj.asString();
+                        _ = instance.fields.set(name, self.peek());
+                        const value = self.pop(); // pop the instance
+                        _ = self.pop(); // pop the value
+                        self.push(value);
+                    } else {
+                        return self.runtimeErr("Only an Instance can have properties");
+                    }
+                },
                 .op_get_global => {
                     const val = self.read_constant();
                     if (val.isObjType(Object.ObjectType.STRING)) {
@@ -421,9 +454,11 @@ pub const Vm = struct {
                         return self.call(obj.asClosure(), argc);
                     },
                     .CLASS => {
+                        std.debug.print("Inside call value making a new class instancce\n", .{});
                         const class = obj.asClass();
                         const instance = Object.InstanceObj.newInstance(self, class);
                         self.stack[self.stack_top - argc - 1] = Value.ObjectValue(&instance.obj);
+                        std.debug.print("ok top of the stack should have that instance  {}", .{self.peek().obj.objType});
                         return true;
                     },
                     .NATIVE_FUNC => {
